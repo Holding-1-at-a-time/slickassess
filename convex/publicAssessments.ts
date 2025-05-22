@@ -1,8 +1,8 @@
 import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
 import { ConvexError } from "convex/values"
-import type { Id } from "./_generated/dataModel"
 import { applyRateLimit, rateLimits } from "./utils/rate-limiter"
+import { upsertClient, createVehicle, createAssessment, storeImages, createAuditLog } from "./utils/client-helpers"
 
 // Create a public assessment (no auth required)
 export const create = mutation({
@@ -53,114 +53,33 @@ export const create = mutation({
       throw new ConvexError("Invalid tenant configuration")
     }
 
-    // Use atomic upsert pattern for client creation to avoid race conditions
-    let clientId: Id<"clients">
+    // Get organization ID from tenant
+    const orgId = tenant.orgId
 
-    // First try to find the client
-    const existingClient = await ctx.db
-      .query("clients")
-      .withIndex("by_orgId_and_email", (q) => q.eq("orgId", tenant.orgId).eq("email", args.clientInfo.email))
-      .first()
+    // 1. Upsert client (handles race conditions)
+    const clientId = await upsertClient(ctx, orgId, args.clientInfo, now)
 
-    if (existingClient) {
-      // Use existing client
-      clientId = existingClient._id
+    // 2. Create vehicle
+    const vehicleId = await createVehicle(ctx, orgId, clientId, args.vehicleInfo, now)
 
-      // Update client info if needed
-      if (existingClient.name !== args.clientInfo.name || existingClient.phone !== args.clientInfo.phone) {
-        await ctx.db.patch(clientId, {
-          name: args.clientInfo.name,
-          phone: args.clientInfo.phone,
-          updatedAt: now,
-        })
-      }
-    } else {
-      // Create new client with retry logic for potential race conditions
-      try {
-        clientId = await ctx.db.insert("clients", {
-          name: args.clientInfo.name,
-          email: args.clientInfo.email,
-          phone: args.clientInfo.phone,
-          status: "active",
-          orgId: tenant.orgId,
-          clerkId: "public-submission", // Special marker for public submissions
-          createdAt: now,
-          updatedAt: now,
-        })
-      } catch (error) {
-        // If insert fails due to a unique constraint, try to fetch again
-        const retryClient = await ctx.db
-          .query("clients")
-          .withIndex("by_orgId_and_email", (q) => q.eq("orgId", tenant.orgId).eq("email", args.clientInfo.email))
-          .first()
+    // 3. Create assessment
+    const assessmentId = await createAssessment(ctx.db, orgId, vehicleId, args.vehicleInfo, args.assessmentInfo, now)
 
-        if (!retryClient) {
-          throw new ConvexError("Failed to create or retrieve client")
-        }
-
-        clientId = retryClient._id
-      }
+    // 4. Store images (if any)
+    if (args.imageUrls.length > 0) {
+      await storeImages(ctx.db, orgId, vehicleId, assessmentId, args.imageUrls, now)
     }
 
-    // Create vehicle
-    const vehicleId = await ctx.db.insert("vehicles", {
-      clientId,
-      vin: "", // Empty for public submissions
-      make: args.vehicleInfo.make,
-      model: args.vehicleInfo.model,
-      year: args.vehicleInfo.year,
-      color: args.vehicleInfo.color,
-      licensePlate: args.vehicleInfo.licensePlate,
-      mileage: args.vehicleInfo.mileage,
-      orgId: tenant.orgId,
-      clerkId: "public-submission",
-      createdAt: now,
-      updatedAt: now,
-    })
-
-    // Create assessment
-    const findings = []
-    if (args.assessmentInfo.hasScratches) findings.push("Scratches/paint damage")
-    if (args.assessmentInfo.hasDents) findings.push("Dents/body damage")
-    if (args.assessmentInfo.hasRust) findings.push("Rust/corrosion")
-    if (args.assessmentInfo.hasInteriorDamage) findings.push("Interior damage")
-
-    const assessmentId = await ctx.db.insert("assessments", {
-      vehicleId,
-      title: `QR Self-Assessment: ${args.vehicleInfo.make} ${args.vehicleInfo.model}`,
-      description: args.assessmentInfo.notes || "Self-assessment submitted via QR code",
-      status: "pending",
-      findings: findings.map((finding) => ({ issue: finding, severity: "unknown" })),
-      orgId: tenant.orgId,
-      clerkId: "public-submission",
-      createdAt: now,
-      updatedAt: now,
-    })
-
-    // Store images
-    for (const imageUrl of args.imageUrls) {
-      await ctx.db.insert("images", {
-        orgId: tenant.orgId,
-        createdBy: "public-submission",
-        imageUrl,
-        vehicleId,
-        assessmentId,
-        category: "qr-submission",
-        tags: ["qr-code", "self-assessment"],
-        createdAt: now,
-      })
-    }
-
-    // Create audit log
-    await ctx.db.insert("auditLogs", {
-      orgId: tenant.orgId,
-      clerkId: "public-submission",
-      action: "createPublicAssessment",
-      resourceType: "assessment",
-      resourceId: assessmentId.toString(),
-      details: `QR code self-assessment submitted for ${args.vehicleInfo.make} ${args.vehicleInfo.model}`,
-      createdAt: now,
-    })
+    // 5. Create audit log
+    await createAuditLog(
+      ctx.db,
+      orgId,
+      "createPublicAssessment",
+      "assessment",
+      assessmentId.toString(),
+      `QR code self-assessment submitted for ${args.vehicleInfo.make} ${args.vehicleInfo.model}`,
+      now,
+    )
 
     return {
       success: true,
