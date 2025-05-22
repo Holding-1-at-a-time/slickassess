@@ -138,7 +138,7 @@ export default defineSchema({
 
   // Lead Assessments table (from QR code submissions)
   leadAssessments: defineTable({
-    tenantId: v.string(), // Tenant/organization ID
++    tenantId: v.id("tenants"), // Tenant/organization ID
     customerInfo: v.object({
       name: v.string(),
       email: v.string(),
