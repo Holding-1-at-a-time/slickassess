@@ -88,30 +88,30 @@ function LeadsPage() {
         leadToast.showBulkConversionSuccess(result.success.length)
         setSelectedLeads([])
       }
-      if (result.failed.length > 0) {
-        leadToast.showActionError("Bulk Conversion", new Error(`Failed to convert ${result.failed.length} leads`))
-      }
-    } catch (error) {
-      console.error("Failed to bulk convert leads:", error)
-      leadToast.showActionError("Bulk Conversion", error as Error)
-    } finally {
-      setIsConverting(false)
-    }
-  }
+      // Use a custom confirmation dialog instead of native confirm
+      const { openDialog, DialogComponent } = useConfirmationDialog({
+        title: "Confirm Deletion",
+        description: `Are you sure you want to delete ${selectedLeads.length} leads? This action cannot be undone.`,
+        onConfirm: async () => {
+          try {
+            const result = await bulkDeleteMutation({ leadIds: selectedLeads })
+            if (result.success.length > 0) {
+              leadToast.showBulkDeletionSuccess(result.success.length)
+              setSelectedLeads([])
+            }
+            if (result.failed.length > 0) {
+              leadToast.showActionError("Bulk Deletion", new Error(`Failed to delete ${result.failed.length} leads`))
+            }
+          } catch (error) {
+            console.error("Failed to bulk delete leads:", error)
+            leadToast.showActionError("Bulk Deletion", error as Error)
+          }
+        }
+      });
 
-  const { openDialog: openDeleteDialog, DialogComponent: DeleteDialogComponent } = useConfirmationDialog({
-    title: "Confirm Deletion",
-    description: `Are you sure you want to delete ${selectedLeads.length} leads? This action cannot be undone.`,
-    confirmText: "Delete Leads",
-    isDestructive: true,
-    onConfirm: async () => {
-      if (selectedLeads.length === 0) {
-        return
-      }
-
-      try {
-        setIsDeleting(true)
-        const result = await bulkDeleteMutation({ leadIds: selectedLeads })
+      // Open the dialog instead of using confirm
+      openDialog();
+      return;
         if (result.success.length > 0) {
           leadToast.showBulkDeletionSuccess(result.success.length)
           setSelectedLeads([])
