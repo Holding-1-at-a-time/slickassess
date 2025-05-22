@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
 import { ConvexError } from "convex/values"
 import type { Id } from "./_generated/dataModel"
+import { applyRateLimit, rateLimits } from "./utils/rate-limiter"
 
 // Create a public assessment (no auth required)
 export const create = mutation({
@@ -28,9 +29,18 @@ export const create = mutation({
       notes: v.optional(v.string()),
     }),
     imageUrls: v.array(v.string()),
+    // IP address or other identifier for rate limiting
+    clientIdentifier: v.string(),
   },
   handler: async (ctx, args) => {
     const now = Date.now()
+
+    // Apply rate limiting
+    await ctx.runMutation(applyRateLimit, {
+      identifier: args.clientIdentifier,
+      action: "publicAssessment",
+      config: rateLimits.publicAssessment,
+    })
 
     // Verify tenant exists and is valid
     const tenant = await ctx.db.get(args.tenantId)
