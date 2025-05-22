@@ -1,61 +1,29 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@clerk/nextjs"
 import { useOrganization } from "@clerk/nextjs"
 import { withAuth } from "@/components/with-auth"
 import { useToast } from "@/components/ui/use-toast"
-import { useQuery } from "convex/react"
+import { useQuery, useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
-import { CalendarIcon, CheckCircle, CreditCard, FileText, RefreshCw } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
+import { CalendarIcon, CheckCircle, CreditCard, FileText, RefreshCw, AlertTriangle, TrendingUp } from "lucide-react"
 
-// Define pricing plans
-const PRICING_PLANS = [
-  {
-    id: "price_basic",
-    name: "Basic",
-    price: 49,
-    interval: "month",
-    features: [
-      "Up to 50 assessments per month",
-      "Basic damage detection",
-      "Email notifications",
-      "30-day data retention",
-    ],
-  },
-  {
-    id: "price_pro",
-    name: "Professional",
-    price: 99,
-    interval: "month",
-    features: [
-      "Up to 200 assessments per month",
-      "Advanced damage detection",
-      "Email & SMS notifications",
-      "90-day data retention",
-      "Priority support",
-    ],
-    popular: true,
-  },
-  {
-    id: "price_enterprise",
-    name: "Enterprise",
-    price: 199,
-    interval: "month",
-    features: [
-      "Unlimited assessments",
-      "Premium damage detection",
-      "All notification channels",
-      "1-year data retention",
-      "24/7 priority support",
-      "Custom integrations",
-    ],
-  },
-]
+interface PricingPlan {
+  id: string
+  name: string
+  description: string
+  price: number
+  interval: string
+  features: string[]
+  stripePriceId?: string
+  popular?: boolean
+}
 
 function BillingPage() {
   const { getToken } = useAuth()
@@ -63,11 +31,39 @@ function BillingPage() {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null)
+  const [pricingPlans, setPricingPlans] = useState<PricingPlan[]>([])
+  const [plansLoading, setPlansLoading] = useState(true)
 
-  // Get subscription status from Convex
+  // Get data from Convex
   const orgId = organization?.id || ""
   const subscriptionStatus = useQuery(api.billing.getSubscriptionStatus, { orgId })
   const invoices = useQuery(api.billing.getInvoices, { orgId })
+  const billingUsage = useQuery(api.billing.getBillingUsage, { orgId })
+
+  // Mutations
+  const cancelSubscription = useMutation(api.billing.cancelSubscription)
+  const reactivateSubscription = useMutation(api.billing.reactivateSubscription)
+
+  // Fetch pricing plans
+  useEffect(() => {
+    async function fetchPlans() {
+      try {
+        const response = await fetch("/api/billing/pricing-plans")
+        const data = await response.json()
+        setPricingPlans(data.plans)
+      } catch (error) {
+        console.error("Error fetching pricing plans:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load pricing plans",
+          variant: "destructive",
+        })
+      } finally {
+        setPlansLoading(false)
+      }
+    }
+    fetchPlans()
+  }, [toast])
 
   // Format date for display
   const formatDate = (timestamp: number) => {
@@ -127,6 +123,42 @@ function BillingPage() {
     }
   }
 
+  // Handle subscription cancellation
+  const handleCancelSubscription = async () => {
+    try {
+      await cancelSubscription({ orgId })
+      toast({
+        title: "Success",
+        description: "Your subscription will be canceled at the end of the current billing period.",
+      })
+    } catch (error) {
+      console.error("Error canceling subscription:", error)
+      toast({
+        title: "Error",
+        description: "Failed to cancel subscription. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Handle subscription reactivation
+  const handleReactivateSubscription = async () => {
+    try {
+      await reactivateSubscription({ orgId })
+      toast({
+        title: "Success",
+        description: "Your subscription has been reactivated.",
+      })
+    } catch (error) {
+      console.error("Error reactivating subscription:", error)
+      toast({
+        title: "Error",
+        description: "Failed to reactivate subscription. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
   return (
     <div className="container mx-auto py-8 space-y-8">
       <div className="flex flex-col space-y-2">
@@ -163,15 +195,15 @@ function BillingPage() {
                       </>
                     ) : (
                       <>
-                        <RefreshCw className="h-4 w-4 text-yellow-500" />
-                        <span>{subscriptionStatus.status}</span>
+                        <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                        <span className="capitalize">{subscriptionStatus.status}</span>
                       </>
                     )}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <p className="font-medium">Plan</p>
-                  <p>{subscriptionStatus.planId || "Unknown"}</p>
+                  <p>{pricingPlans.find((p) => p.stripePriceId === subscriptionStatus.planId)?.name || "Unknown"}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="font-medium">Renewal Date</p>
@@ -181,11 +213,23 @@ function BillingPage() {
                   </div>
                 </div>
               </div>
-              {subscriptionStatus.cancelAtPeriodEnd && (
+
+              {subscriptionStatus.cancelAtPeriodEnd ? (
                 <div className="rounded-md bg-amber-50 p-4 border border-amber-200">
-                  <p className="text-amber-800">
-                    Your subscription will be canceled at the end of the current billing period.
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-amber-800">
+                      Your subscription will be canceled at the end of the current billing period.
+                    </p>
+                    <Button onClick={handleReactivateSubscription} variant="outline" size="sm">
+                      Reactivate
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end">
+                  <Button onClick={handleCancelSubscription} variant="outline" size="sm">
+                    Cancel Subscription
+                  </Button>
                 </div>
               )}
             </div>
@@ -193,64 +237,133 @@ function BillingPage() {
         </CardContent>
       </Card>
 
+      {/* Usage Statistics */}
+      {billingUsage && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <TrendingUp className="h-5 w-5" />
+              <span>Usage This Period</span>
+            </CardTitle>
+            <CardDescription>
+              Billing period: {formatDate(billingUsage.currentPeriodStart)} -{" "}
+              {formatDate(billingUsage.currentPeriodEnd)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span>Assessments Used</span>
+                  <span>
+                    {billingUsage.assessmentsUsed} /{" "}
+                    {billingUsage.assessmentsLimit === 999999 ? "Unlimited" : billingUsage.assessmentsLimit}
+                  </span>
+                </div>
+                <Progress
+                  value={
+                    billingUsage.assessmentsLimit === 999999
+                      ? 0
+                      : (billingUsage.assessmentsUsed / billingUsage.assessmentsLimit) * 100
+                  }
+                  className="h-2"
+                />
+              </div>
+              {billingUsage.assessmentsUsed / billingUsage.assessmentsLimit > 0.8 &&
+                billingUsage.assessmentsLimit !== 999999 && (
+                  <div className="rounded-md bg-amber-50 p-3 border border-amber-200">
+                    <p className="text-amber-800 text-sm">
+                      You're approaching your assessment limit. Consider upgrading your plan.
+                    </p>
+                  </div>
+                )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Pricing Plans */}
       <div className="space-y-4">
         <h2 className="text-2xl font-bold">Pricing Plans</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {PRICING_PLANS.map((plan) => (
-            <Card key={plan.id} className={plan.popular ? "border-primary" : ""}>
-              {plan.popular && (
-                <div className="absolute top-0 right-0 -mt-2 -mr-2">
-                  <Badge className="bg-primary text-primary-foreground">Popular</Badge>
-                </div>
-              )}
-              <CardHeader>
-                <CardTitle>{plan.name}</CardTitle>
-                <CardDescription>
-                  <span className="text-3xl font-bold">${plan.price}</span>
-                  <span className="text-muted-foreground">/{plan.interval}</span>
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {plan.features.map((feature, index) => (
-                    <li key={index} className="flex items-start">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-              <CardFooter>
-                <Button
-                  className="w-full"
-                  onClick={() => handleSubscribe(plan.id)}
-                  disabled={isLoading && selectedPlan === plan.id}
-                  variant={plan.popular ? "default" : "outline"}
-                >
-                  {isLoading && selectedPlan === plan.id ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Subscribe
-                    </>
-                  )}
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
+        {plansLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-6 w-24" />
+                  <Skeleton className="h-8 w-16" />
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {[1, 2, 3, 4].map((j) => (
+                      <Skeleton key={j} className="h-4 w-full" />
+                    ))}
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Skeleton className="h-10 w-full" />
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {pricingPlans.map((plan) => (
+              <Card key={plan.id} className={`relative ${plan.popular ? "border-primary shadow-lg" : ""}`}>
+                {plan.popular && (
+                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                    <Badge className="bg-primary text-primary-foreground">Most Popular</Badge>
+                  </div>
+                )}
+                <CardHeader>
+                  <CardTitle>{plan.name}</CardTitle>
+                  <CardDescription>{plan.description}</CardDescription>
+                  <div className="space-y-1">
+                    <span className="text-3xl font-bold">{formatCurrency(plan.price)}</span>
+                    <span className="text-muted-foreground">/{plan.interval}</span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2">
+                    {plan.features.map((feature, index) => (
+                      <li key={index} className="flex items-start">
+                        <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0 mt-0.5" />
+                        <span className="text-sm">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+                <CardFooter>
+                  <Button
+                    className="w-full"
+                    onClick={() => plan.stripePriceId && handleSubscribe(plan.stripePriceId)}
+                    disabled={(isLoading && selectedPlan === plan.stripePriceId) || !plan.stripePriceId}
+                    variant={plan.popular ? "default" : "outline"}
+                  >
+                    {isLoading && selectedPlan === plan.stripePriceId ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        {subscriptionStatus?.planId === plan.stripePriceId ? "Current Plan" : "Subscribe"}
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Invoices */}
       <Card>
         <CardHeader>
           <CardTitle>Billing History</CardTitle>
-          <CardDescription>Your recent invoices</CardDescription>
+          <CardDescription>Your recent invoices and payments</CardDescription>
         </CardHeader>
         <CardContent>
           {invoices === undefined ? (
@@ -260,7 +373,8 @@ function BillingPage() {
               <Skeleton className="h-12 w-full" />
             </div>
           ) : invoices.length === 0 ? (
-            <div className="text-center py-4">
+            <div className="text-center py-8">
+              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground">No invoices found</p>
             </div>
           ) : (
@@ -281,7 +395,17 @@ function BillingPage() {
                         <td className="px-4 py-3 text-sm">{formatDate(invoice.createdAt)}</td>
                         <td className="px-4 py-3 text-sm font-medium">{formatCurrency(invoice.amount)}</td>
                         <td className="px-4 py-3 text-sm">
-                          <Badge variant={invoice.status === "paid" ? "success" : "secondary"}>{invoice.status}</Badge>
+                          <Badge
+                            variant={
+                              invoice.status === "paid"
+                                ? "default"
+                                : invoice.status === "payment_failed"
+                                  ? "destructive"
+                                  : "secondary"
+                            }
+                          >
+                            {invoice.status === "payment_failed" ? "Failed" : invoice.status}
+                          </Badge>
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
                           {invoice.invoiceUrl && (

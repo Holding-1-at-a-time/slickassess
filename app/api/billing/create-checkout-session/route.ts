@@ -3,15 +3,16 @@ import { auth } from "@clerk/nextjs/server"
 import Stripe from "stripe"
 import { ConvexHttpClient } from "convex/http"
 import { api } from "@/convex/_generated/api"
+import { requireEnv } from "@/utils/env"
 
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+const stripe = new Stripe(requireEnv("STRIPE_SECRET_KEY"), {
   apiVersion: "2023-10-16",
 })
 
 // Initialize Convex client
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || ""
-const convexAdminKey = process.env.CONVEX_ADMIN_KEY || ""
+const convexUrl = requireEnv("NEXT_PUBLIC_CONVEX_URL")
+const convexAdminKey = requireEnv("CONVEX_ADMIN_KEY")
 const convexClient = new ConvexHttpClient(convexUrl, convexAdminKey)
 
 export async function POST(req: Request) {
@@ -36,8 +37,8 @@ export async function POST(req: Request) {
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       customer: stripeCustomerId,
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/billing?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/billing`,
+      success_url: `${requireEnv("NEXT_PUBLIC_APP_URL")}/settings/billing?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${requireEnv("NEXT_PUBLIC_APP_URL")}/settings/billing`,
       client_reference_id: orgId,
       metadata: {
         orgId,
