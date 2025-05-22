@@ -4,12 +4,12 @@ import { useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
-import { useOrganization } from "@clerk/nextjs"
+import { useOrganization, useAuth } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, ArrowLeft, Car, User, Calendar, FileText, ImageIcon, Check, X } from "lucide-react"
+import { Loader2, ArrowLeft, Car, User, Calendar, FileText, ImageIcon, Check, X, AlertTriangle } from "lucide-react"
 import Image from "next/image"
 import { withAuth } from "@/components/with-auth"
 import { formatDate, getRelativeTimeString } from "@/utils/date-formatter"
@@ -19,29 +19,43 @@ function LeadDetailsPage() {
   const params = useParams()
   const router = useRouter()
   const { organization } = useOrganization()
+  const { userId } = useAuth()
   const leadId = params.id as string
   const leadToast = useLeadToast({ router })
+  const [error, setError] = useState<string | null>(null)
 
   const lead = useQuery(api.leads.getById, {
     leadId,
+    orgId: organization?.id || "",
   })
 
   const convertLeadMutation = useMutation(api.leads.convertLeadToAssessment)
   const [converting, setConverting] = useState(false)
 
   async function handleConvert() {
-    if (!lead || lead.convertedToAssessment) return
+    if (!lead || lead.convertedToAssessment || !organization?.id) return
 
     try {
       setConverting(true)
-      const assessmentId = await convertLeadMutation({ leadAssessmentId: lead._id })
+      setError(null)
+      const assessmentId = await convertLeadMutation({
+        leadAssessmentId: lead._id,
+        orgId: organization.id,
+      })
       leadToast.showConversionSuccess(assessmentId)
       router.push(`/assessments/${assessmentId}`)
     } catch (error) {
       console.error("Failed to convert lead:", error)
+      setError("Failed to convert lead. Please try again.")
       leadToast.showConversionError(error as Error)
       setConverting(false)
     }
+  }
+
+  // Redirect if no organization
+  if (!organization?.id && typeof window !== "undefined") {
+    router.push("/organization/create")
+    return null
   }
 
   if (!lead) {
@@ -50,6 +64,28 @@ function LeadDetailsPage() {
         <div className="flex justify-center items-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-[#00ae98]" />
         </div>
+      </div>
+    )
+  }
+
+  // Check if lead belongs to the current organization
+  if (lead.tenantId !== organization?.id) {
+    return (
+      <div className="container mx-auto py-8">
+        <Card className="max-w-md mx-auto">
+          <CardHeader>
+            <CardTitle className="text-red-600 flex items-center">
+              <AlertTriangle className="mr-2 h-5 w-5" />
+              Access Denied
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>You don't have permission to view this lead.</p>
+            <Button variant="outline" className="mt-4" onClick={() => router.push("/leads")}>
+              Back to Leads
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -84,6 +120,13 @@ function LeadDetailsPage() {
           </Button>
         )}
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 text-red-800 rounded-md flex items-center">
+          <AlertTriangle className="h-5 w-5 mr-2" />
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2">
@@ -189,7 +232,7 @@ function LeadDetailsPage() {
               </TabsContent>
 
               <TabsContent value="images">
-                {lead.imageIds.length === 0 ? (
+                {!lead.imageIds || lead.imageIds.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-30" />
                     <p>No images provided</p>
