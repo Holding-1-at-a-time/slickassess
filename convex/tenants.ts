@@ -56,8 +56,8 @@ export const create = mutation({
     // Generate QR code using the action
     const qrCodeUrl = await ctx.runAction(api.actions.generateQrCode, {
       url: publicUrl,
-      options: {
-        width: 512,
+      // Generate QR code in an action instead
+      const dataUrl = await ctx.runAction("tenants/generateQrCode", { url: publicUrl })
         margin: 1,
         color: {
           dark: "#00AE98",
