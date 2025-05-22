@@ -801,7 +801,7 @@ export const getLeadAnalytics = query({
     // Group leads by vehicle make
     const leadsByMake: Record<string, number> = {}
     leads.forEach((lead) => {
-      const make = lead.vehicleInfo.make
+      const {make} = lead.vehicleInfo
       leadsByMake[make] = (leadsByMake[make] || 0) + 1
     })
 
