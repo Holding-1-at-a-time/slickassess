@@ -6,6 +6,7 @@ import { RecentActivity } from "@/components/recent-activity"
 import { RecentActivitySkeleton } from "@/components/recent-activity-skeleton"
 import { auth } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
+import { LeadsWidget } from "@/components/leads-widget"
 
 export default function DashboardPage() {
   const { userId, orgId } = auth()
@@ -32,6 +33,13 @@ export default function DashboardPage() {
           <h2 className="text-2xl font-bold mb-6 text-[#00ae98]">Recent Activity</h2>
           <Suspense fallback={<RecentActivitySkeleton />}>
             <RecentActivity />
+          </Suspense>
+        </div>
+
+        <div className="mt-10">
+          <h2 className="text-2xl font-bold mb-6 text-[#00ae98]">New Leads</h2>
+          <Suspense fallback={<div className="animate-pulse h-48 bg-gray-200 rounded-lg"></div>}>
+            <LeadsWidget />
           </Suspense>
         </div>
       </main>
