@@ -95,7 +95,7 @@ export default function QrCodePage() {
 
   return (
     <div className="container py-8">
-      <h1 className="text-3xl font-bold mb-6">QR Code Management</h1>
+      {`${process.env.NEXT_PUBLIC_APP_URL}/scan/${tenant.qrSlug}`}
 
       <Tabs defaultValue="qr-code">
         <TabsList className="mb-6">
