@@ -1,8 +1,18 @@
 import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
 import { nanoid } from "nanoid"
+import { ConvexError } from "convex/values"
 import { requireAuth } from "./utils/auth"
 import QRCode from "qrcode"
+
+// Helper function to safely get app URL with fallback
+function getAppUrl(): string {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) {
+    throw new ConvexError("NEXT_PUBLIC_APP_URL environment variable is not set")
+  }
+  return appUrl
+}
 
 // Create a new tenant
 export const create = mutation({
@@ -20,11 +30,21 @@ export const create = mutation({
     const { userId, orgId } = await requireAuth(ctx)
     const now = Date.now()
 
+    // Check if tenant already exists for this org
+    const existingTenant = await ctx.db
+      .query("tenants")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .first()
+
+    if (existingTenant) {
+      throw new ConvexError("Tenant already exists for this organization")
+    }
+
     // Generate a unique slug for the QR code
     const qrSlug = nanoid(10)
 
     // Generate the public URL
-    const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL}/scan/${qrSlug}`
+    const publicUrl = `${getAppUrl()}/scan/${qrSlug}`
 
     // Generate QR code as data URL
     const qrCodeUrl = await QRCode.toDataURL(publicUrl, {
@@ -40,7 +60,8 @@ export const create = mutation({
     const tenantId = await ctx.db.insert("tenants", {
       name: args.name,
       orgId,
-      qrSlug,
+      qrSlugs: [{ slug: qrSlug, active: true, createdAt: now }],
+      activeQrSlug: qrSlug,
       qrCodeUrl,
       branding: args.branding || {
         primaryColor: "#00AE98",
@@ -80,10 +101,18 @@ export const getByOrgId = query({
 export const getByQrSlug = query({
   args: { qrSlug: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    // First try to find a tenant with this as the active slug
+    const tenantByActiveSlug = await ctx.db
       .query("tenants")
-      .withIndex("by_qrSlug", (q) => q.eq("qrSlug", args.qrSlug))
+      .withIndex("by_activeQrSlug", (q) => q.eq("activeQrSlug", args.qrSlug))
       .first()
+
+    if (tenantByActiveSlug) {
+      return tenantByActiveSlug
+    }
+
+    // If not found, this QR code is no longer valid
+    return null
   },
 })
 
@@ -92,18 +121,24 @@ export const regenerateQrCode = mutation({
   args: { tenantId: v.id("tenants") },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireAuth(ctx)
+    const now = Date.now()
 
     // Get the tenant
     const tenant = await ctx.db.get(args.tenantId)
-    if (!tenant || tenant.orgId !== orgId) {
-      throw new Error("Tenant not found or access denied")
+    if (!tenant) {
+      throw new ConvexError("Tenant not found")
+    }
+
+    // Verify the tenant belongs to the user's organization
+    if (tenant.orgId !== orgId) {
+      throw new ConvexError("Access denied")
     }
 
     // Generate a new unique slug
     const qrSlug = nanoid(10)
 
     // Generate the public URL
-    const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL}/scan/${qrSlug}`
+    const publicUrl = `${getAppUrl()}/scan/${qrSlug}`
 
     // Generate QR code as data URL
     const qrCodeUrl = await QRCode.toDataURL(publicUrl, {
@@ -115,11 +150,25 @@ export const regenerateQrCode = mutation({
       },
     })
 
+    // Update the tenant with the new QR code and mark the old one as inactive
+    const qrSlugs = [...(tenant.qrSlugs || [])].map((slug) => ({
+      ...slug,
+      active: false,
+    }))
+
+    // Add the new slug
+    qrSlugs.push({
+      slug: qrSlug,
+      active: true,
+      createdAt: now,
+    })
+
     // Update the tenant
     await ctx.db.patch(args.tenantId, {
-      qrSlug,
+      qrSlugs,
+      activeQrSlug: qrSlug,
       qrCodeUrl,
-      updatedAt: Date.now(),
+      updatedAt: now,
     })
 
     // Create audit log
@@ -129,7 +178,8 @@ export const regenerateQrCode = mutation({
       action: "regenerateQrCode",
       resourceType: "tenant",
       resourceId: args.tenantId.toString(),
-      createdAt: Date.now(),
+      details: `QR code regenerated. Old slug invalidated.`,
+      createdAt: now,
     })
 
     return {
@@ -154,8 +204,13 @@ export const updateBranding = mutation({
 
     // Get the tenant
     const tenant = await ctx.db.get(args.tenantId)
-    if (!tenant || tenant.orgId !== orgId) {
-      throw new Error("Tenant not found or access denied")
+    if (!tenant) {
+      throw new ConvexError("Tenant not found")
+    }
+
+    // Verify the tenant belongs to the user's organization
+    if (tenant.orgId !== orgId) {
+      throw new ConvexError("Access denied")
     }
 
     // Update the tenant

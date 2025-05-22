@@ -3,53 +3,80 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { useConvexAuth } from "convex/react"
+import { useParams } from "next/navigation"
+import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
-import { useQuery } from "convex/react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2 } from "lucide-react"
-import { SelfAssessmentForm } from "@/components/self-assessment-form"
+import { Loader2, AlertTriangle } from "lucide-react"
+import SelfAssessmentForm from "@/components/self-assessment-form"
 
-export default function ScanLandingPage({ params }: { params: { qrSlug: string } }) {
-  const { qrSlug } = params
-  const { isAuthenticated } = useConvexAuth()
-  const tenant = useQuery(api.tenants.getByQrSlug, { qrSlug })
+// Initialize Convex HTTP client for public access
+const convexClient = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "")
+
+export default function ScanPage() {
+  const { qrSlug } = useParams() as { qrSlug: string }
+  const [tenant, setTenant] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (tenant !== undefined) {
-      setLoading(false)
+    async function fetchTenant() {
+      try {
+        setLoading(true)
+        const result = await convexClient.query(api.tenants.getByQrSlug, { qrSlug })
+
+        if (!result) {
+          setError(
+            "This QR code is invalid or has expired. Please contact the service provider for an updated QR code.",
+          )
+        } else {
+          setTenant(result)
+        }
+      } catch (err) {
+        console.error("Error fetching tenant:", err)
+        setError("Something went wrong. Please try again later.")
+      } finally {
+        setLoading(false)
+      }
     }
-  }, [tenant])
+
+    if (qrSlug) {
+      fetchTenant()
+    }
+  }, [qrSlug])
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[#00AE98]" />
-        <p className="mt-4 text-lg">Loading...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <Loader2 className="h-8 w-8 animate-spin text-[#00AE98] mb-4" />
+        <p className="text-center text-gray-600">Loading...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white p-6 rounded-lg shadow-lg">
+          <div className="flex items-center justify-center text-amber-600 mb-4">
+            <AlertTriangle className="h-12 w-12" />
+          </div>
+          <h1 className="text-xl font-bold text-center mb-4">Invalid QR Code</h1>
+          <p className="text-center text-gray-600 mb-6">{error}</p>
+          <div className="text-center text-sm text-gray-500">
+            <p>If you believe this is an error, please contact the service provider.</p>
+          </div>
+        </div>
       </div>
     )
   }
 
   if (!tenant) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardHeader>
-            <CardTitle className="text-2xl text-center text-red-500">Invalid QR Code</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-center">
-              This QR code is invalid or has expired. Please contact the service provider for assistance.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return null
   }
 
   // Use tenant branding if available
   const primaryColor = tenant.branding?.primaryColor || "#00AE98"
+  const secondaryColor = tenant.branding?.secondaryColor || "#707070"
 
   return (
     <div
@@ -57,6 +84,7 @@ export default function ScanLandingPage({ params }: { params: { qrSlug: string }
       style={
         {
           "--primary-color": primaryColor,
+          "--secondary-color": secondaryColor,
         } as React.CSSProperties
       }
     >
@@ -64,27 +92,28 @@ export default function ScanLandingPage({ params }: { params: { qrSlug: string }
         <div className="container mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold">{tenant.name}</h1>
           {tenant.branding?.logo && (
-            <img src={tenant.branding.logo || "/placeholder.svg"} alt="Logo" className="h-10" />
+            <img src={tenant.branding.logo || "/placeholder.svg"} alt={`${tenant.name} logo`} className="h-10 w-auto" />
           )}
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto py-8 px-4">
-        <Card className="max-w-2xl mx-auto">
-          <CardHeader>
-            <CardTitle className="text-2xl font-bold">Vehicle Self-Assessment</CardTitle>
-            <CardDescription>
-              Complete this form to receive a professional assessment and estimate for your vehicle.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SelfAssessmentForm tenantId={tenant._id} />
-          </CardContent>
-        </Card>
+      <main className="flex-1 container mx-auto p-4 md:p-6 max-w-2xl">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-2xl font-bold mb-6 text-center text-[var(--primary-color)]">Vehicle Self-Assessment</h2>
+
+          <p className="mb-6 text-center text-gray-600">
+            Complete this form to submit details about your vehicle. Our team will review your information and get back
+            to you with an assessment.
+          </p>
+
+          <SelfAssessmentForm tenantId={tenant._id} />
+        </div>
       </main>
 
-      <footer className="bg-gray-100 p-4 text-center text-sm text-gray-600">
-        <p>Powered by Vehicle Service SaaS</p>
+      <footer className="bg-gray-100 p-4 text-center text-sm text-gray-500">
+        <p>
+          © {new Date().getFullYear()} {tenant.name}. All rights reserved.
+        </p>
       </footer>
     </div>
   )

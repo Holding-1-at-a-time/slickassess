@@ -1,19 +1,51 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { useQuery, useMutation } from "convex/react"
+import { useAuth, useOrganization } from "@clerk/nextjs"
 import { api } from "@/convex/_generated/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, Download, RefreshCw, QrCode } from "lucide-react"
+import { Loader2, Download, RefreshCw, QrCode, AlertTriangle } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
 export default function QrCodePage() {
   const { toast } = useToast()
+  const router = useRouter()
+  const { userId, isLoaded: isAuthLoaded } = useAuth()
+  const { organization, isLoaded: isOrgLoaded } = useOrganization()
+
   const tenant = useQuery(api.tenants.getByOrgId)
   const regenerateQrCode = useMutation(api.tenants.regenerateQrCode)
   const [regenerating, setRegenerating] = useState(false)
+  const [appUrl, setAppUrl] = useState<string>("")
+
+  // Check authentication and redirect if needed
+  useEffect(() => {
+    if (isAuthLoaded && !userId) {
+      router.push("/sign-in")
+    }
+
+    if (isAuthLoaded && isOrgLoaded) {
+      if (!organization) {
+        router.push("/organization/create")
+      } else {
+        // Check if user has admin role
+        const isAdmin = organization.membership?.role === "admin"
+        if (!isAdmin) {
+          router.push("/dashboard")
+        }
+      }
+    }
+  }, [isAuthLoaded, isOrgLoaded, userId, organization, router])
+
+  // Get the app URL safely
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+    setAppUrl(url)
+  }, [])
 
   const handleRegenerateQrCode = async () => {
     if (!tenant) return
@@ -23,7 +55,7 @@ export default function QrCodePage() {
       await regenerateQrCode({ tenantId: tenant._id })
       toast({
         title: "QR Code Regenerated",
-        description: "Your QR code has been successfully regenerated.",
+        description: "Your QR code has been successfully regenerated. Previous QR codes are now invalid.",
       })
     } catch (error) {
       console.error("Error regenerating QR code:", error)
@@ -49,7 +81,8 @@ export default function QrCodePage() {
     document.body.removeChild(link)
   }
 
-  if (!tenant) {
+  // Show loading state while checking auth
+  if (!isAuthLoaded || !isOrgLoaded || !tenant) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-[#00AE98]" />
@@ -57,7 +90,7 @@ export default function QrCodePage() {
     )
   }
 
-  const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL}/scan/${tenant.qrSlug}`
+  const publicUrl = `${appUrl}/scan/${tenant.activeQrSlug}`
 
   return (
     <div className="container py-8">
@@ -112,6 +145,10 @@ export default function QrCodePage() {
                     )}
                     Regenerate
                   </Button>
+                </div>
+                <div className="flex items-center gap-2 text-amber-600 text-xs mt-2 bg-amber-50 p-2 rounded">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>Regenerating will invalidate all previously distributed QR codes.</span>
                 </div>
               </CardFooter>
             </Card>

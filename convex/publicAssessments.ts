@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
+import { ConvexError } from "convex/values"
 import type { Id } from "./_generated/dataModel"
 
 // Create a public assessment (no auth required)
@@ -31,10 +32,15 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const now = Date.now()
 
-    // Verify tenant exists
+    // Verify tenant exists and is valid
     const tenant = await ctx.db.get(args.tenantId)
     if (!tenant) {
-      throw new Error("Tenant not found")
+      throw new ConvexError("Tenant not found")
+    }
+
+    // Verify the tenant has an active QR slug
+    if (!tenant.activeQrSlug) {
+      throw new ConvexError("Invalid tenant configuration")
     }
 
     // Check if client already exists by email
@@ -120,9 +126,6 @@ export const create = mutation({
       createdAt: now,
     })
 
-    // Create notification for organization members
-    // This would typically be handled by a separate system or webhook
-
     return {
       success: true,
       assessmentId,
@@ -138,7 +141,7 @@ export const getByTenant = query({
   handler: async (ctx, args) => {
     const tenant = await ctx.db.get(args.tenantId)
     if (!tenant) {
-      throw new Error("Tenant not found")
+      throw new ConvexError("Tenant not found")
     }
 
     // Query assessments created via public submission
