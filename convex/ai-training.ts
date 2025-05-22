@@ -1,10 +1,10 @@
-import { mutation, query, action } from "./_generated/server"
+import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
 import { requireAuth } from "./utils/auth"
+import { ConvexError } from "convex-dev/server"
+import { action } from "./_generated/server"
 
-/**
- * Saves feedback on AI predictions for training
- */
+// Save AI feedback for training
 export const saveFeedback = mutation({
   args: {
     imageId: v.id("vehicleImages"),
@@ -37,24 +37,23 @@ export const saveFeedback = mutation({
         severity: v.string(),
       }),
     ),
-    feedbackType: v.string(), // "correction", "confirmation", "rejection"
+    feedbackType: v.string(), // "confirmation", "correction", "rejection"
     feedbackNotes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireAuth(ctx)
-    const now = Date.now()
+    const { orgId, userId } = await requireAuth(ctx)
 
     // Verify that the image exists and belongs to the current organization
     const image = await ctx.db.get(args.imageId)
     if (!image || image.orgId !== orgId) {
-      throw new Error("Image not found or access denied")
+      throw new ConvexError("Image not found or access denied")
     }
 
-    // If assessmentId is provided, verify that it exists and belongs to the current organization
+    // If assessmentId is provided, verify it exists and belongs to the current organization
     if (args.assessmentId) {
       const assessment = await ctx.db.get(args.assessmentId)
       if (!assessment || assessment.orgId !== orgId) {
-        throw new Error("Assessment not found or access denied")
+        throw new ConvexError("Assessment not found or access denied")
       }
     }
 
@@ -68,20 +67,167 @@ export const saveFeedback = mutation({
       feedbackNotes: args.feedbackNotes,
       orgId,
       clerkId: userId,
-      createdAt: now,
-    })
-
-    // Log the action
-    await ctx.db.insert("auditLogs", {
-      orgId,
-      clerkId: userId,
-      action: "saveAIFeedback",
-      resourceType: "aiFeedback",
-      resourceId: feedbackId,
-      createdAt: now,
+      createdAt: Date.now(),
     })
 
     return feedbackId
+  },
+})
+
+// Save AI analysis results
+export const saveAnalysisResults = mutation({
+  args: {
+    imageId: v.id("vehicleImages"),
+    vehicleId: v.id("vehicles"),
+    assessmentId: v.optional(v.id("assessments")),
+    analysisType: v.string(), // "exterior" or "interior"
+    results: v.any(), // The full analysis results
+  },
+  handler: async (ctx, args) => {
+    const { orgId, userId } = await requireAuth(ctx)
+
+    // Verify that the image exists and belongs to the current organization
+    const image = await ctx.db.get(args.imageId)
+    if (!image || image.orgId !== orgId) {
+      throw new ConvexError("Image not found or access denied")
+    }
+
+    // Verify that the vehicle exists and belongs to the current organization
+    const vehicle = await ctx.db.get(args.vehicleId)
+    if (!vehicle || vehicle.orgId !== orgId) {
+      throw new ConvexError("Vehicle not found or access denied")
+    }
+
+    // If assessmentId is provided, verify it exists and belongs to the current organization
+    if (args.assessmentId) {
+      const assessment = await ctx.db.get(args.assessmentId)
+      if (!assessment || assessment.orgId !== orgId) {
+        throw new ConvexError("Assessment not found or access denied")
+      }
+    }
+
+    // Save the analysis results
+    const analysisId = await ctx.db.insert("aiAnalysisResults", {
+      imageId: args.imageId,
+      vehicleId: args.vehicleId,
+      assessmentId: args.assessmentId,
+      analysisType: args.analysisType,
+      results: args.results,
+      orgId,
+      createdBy: userId,
+      createdAt: Date.now(),
+    })
+
+    // Update the assessment with the analysis results if provided
+    if (args.assessmentId) {
+      const assessment = await ctx.db.get(args.assessmentId)
+      if (assessment) {
+        const updateData: any = {
+          updatedAt: Date.now(),
+        }
+
+        // Update different fields based on analysis type
+        if (args.analysisType === "exterior") {
+          // Add exterior condition to assessment
+          if (args.results.overallCondition) {
+            updateData.overallCondition = args.results.overallCondition
+          }
+
+          // Add identified issues from damages
+          if (args.results.damages && args.results.damages.length > 0) {
+            const existingIssues = assessment.identifiedIssues || []
+            const newIssues = args.results.damages.map((damage: any) => ({
+              section: "Exterior",
+              severity: damage.severity,
+              description: `${damage.type} on ${damage.location}`,
+              aiDetected: true,
+            }))
+
+            updateData.identifiedIssues = [...existingIssues, ...newIssues]
+          }
+
+          // Add recommendations
+          if (args.results.recommendations && args.results.recommendations.length > 0) {
+            const existingServices = assessment.recommendedServices || []
+            const newServices = args.results.recommendations.map((rec: string) => ({
+              name: rec,
+              description: "AI recommended service",
+              priority: "medium",
+            }))
+
+            updateData.recommendedServices = [...existingServices, ...newServices]
+          }
+        } else if (args.analysisType === "interior") {
+          // Add interior cleanliness to notes
+          if (args.results.overallCleanliness) {
+            const existingNotes = assessment.notes || ""
+            updateData.notes = `${existingNotes}\n\nInterior Cleanliness: ${args.results.overallCleanliness}\n${args.results.summary || ""}`
+          }
+
+          // Add identified issues from interior problems
+          if (args.results.issues && args.results.issues.length > 0) {
+            const existingIssues = assessment.identifiedIssues || []
+            const newIssues = args.results.issues.map((issue: any) => ({
+              section: "Interior",
+              severity: issue.severity,
+              description: `${issue.type} on ${issue.location}`,
+              aiDetected: true,
+            }))
+
+            updateData.identifiedIssues = [...existingIssues, ...newIssues]
+          }
+
+          // Add recommendations
+          if (args.results.recommendations && args.results.recommendations.length > 0) {
+            const existingServices = assessment.recommendedServices || []
+            const newServices = args.results.recommendations.map((rec: string) => ({
+              name: rec,
+              description: "AI recommended cleaning/repair",
+              priority: "medium",
+            }))
+
+            updateData.recommendedServices = [...existingServices, ...newServices]
+          }
+        }
+
+        // Update the assessment
+        await ctx.db.patch(args.assessmentId, updateData)
+      }
+    }
+
+    return analysisId
+  },
+})
+
+// Get AI model training stats
+export const getTrainingStats = query({
+  handler: async (ctx) => {
+    const { orgId } = await requireAuth(ctx)
+
+    // Get feedback counts by type
+    const feedback = await ctx.db
+      .query("aiFeedback")
+      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .collect()
+
+    const feedbackStats = {
+      total: feedback.length,
+      confirmation: feedback.filter((f) => f.feedbackType === "confirmation").length,
+      correction: feedback.filter((f) => f.feedbackType === "correction").length,
+      rejection: feedback.filter((f) => f.feedbackType === "rejection").length,
+    }
+
+    // Get active model versions
+    const activeModels = await ctx.db
+      .query("aiModelVersions")
+      .withIndex("by_modelName_and_isActive", (q) => q.eq("isActive", true))
+      .collect()
+
+    return {
+      feedbackStats,
+      activeModels,
+      totalTrainingData: feedbackStats.total,
+    }
   },
 })
 

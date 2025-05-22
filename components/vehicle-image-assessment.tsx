@@ -6,12 +6,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { ImageAnnotator } from "@/components/image-annotator"
 import { ImageUploader } from "@/components/image-uploader"
-import { AIDamageDetector } from "@/components/ai-damage-detector"
+import { AIVehicleAnalyzer } from "@/components/ai-vehicle-analyzer"
 import { useToast } from "@/components/ui/use-toast"
 import { useQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { Plus, ImageIcon, AlertTriangle } from "lucide-react"
+import { Plus } from "lucide-react"
 
 interface VehicleImageAssessmentProps {
   vehicleId: Id<"vehicles">
@@ -20,13 +20,14 @@ interface VehicleImageAssessmentProps {
 }
 
 export function VehicleImageAssessment({ vehicleId, assessmentId, readOnly = false }: VehicleImageAssessmentProps) {
-  const [selectedImageId, setSelectedImageId] = useState<Id<"images"> | null>(null)
+  const [selectedImageId, setSelectedImageId] = useState<Id<"vehicleImages"> | null>(null)
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [activeTab, setActiveTab] = useState("exterior")
   const [refreshKey, setRefreshKey] = useState(0)
+  const [analysisTab, setAnalysisTab] = useState<"annotations" | "ai-analysis">("annotations")
 
-  const { toast } = useToast()
+  const toast = useToast()
 
   // Fetch vehicle images from Convex
   const vehicleImages = useQuery(api.images.getVehicleImages, { vehicleId }) || []
@@ -94,8 +95,8 @@ export function VehicleImageAssessment({ vehicleId, assessmentId, readOnly = fal
     }
   }
 
-  // Handle AI detection complete
-  const handleDetectionComplete = () => {
+  // Handle AI analysis complete
+  const handleAnalysisComplete = () => {
     // Refresh the annotations
     setRefreshKey((prev) => prev + 1)
   }
@@ -103,10 +104,7 @@ export function VehicleImageAssessment({ vehicleId, assessmentId, readOnly = fal
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center">
-          <ImageIcon className="mr-2 h-5 w-5 text-[#00AE98]" />
-          Vehicle Images
-        </CardTitle>
+        <CardTitle>Vehicle Images</CardTitle>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="exterior" onValueChange={setActiveTab}>
@@ -159,30 +157,54 @@ export function VehicleImageAssessment({ vehicleId, assessmentId, readOnly = fal
 
               {selectedImage && (
                 <div className="mt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-2">
-                      <h3 className="text-lg font-medium mb-4">Image Annotations</h3>
-                      <ImageAnnotator
-                        key={`annotator-${refreshKey}`}
-                        imageUrl={selectedImage.imageUrl}
-                        imageId={selectedImage._id}
-                        vehicleId={vehicleId}
-                        assessmentId={assessmentId}
-                        readOnly={readOnly}
-                      />
-                    </div>
-                    <div>
-                      {!readOnly && (
-                        <AIDamageDetector
-                          imageUrl={selectedImage.imageUrl}
-                          imageId={selectedImage._id}
-                          vehicleId={vehicleId}
-                          assessmentId={assessmentId}
-                          onDetectionComplete={handleDetectionComplete}
-                        />
-                      )}
-                    </div>
-                  </div>
+                  <Tabs
+                    value={analysisTab}
+                    onValueChange={(value) => setAnalysisTab(value as "annotations" | "ai-analysis")}
+                  >
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="annotations">Manual Annotations</TabsTrigger>
+                      <TabsTrigger value="ai-analysis">AI Analysis</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="annotations">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="md:col-span-2">
+                          <h3 className="text-lg font-medium mb-4">Image Annotations</h3>
+                          <ImageAnnotator
+                            key={`annotator-${refreshKey}`}
+                            imageUrl={selectedImage.imageUrl}
+                            imageId={selectedImage._id}
+                            vehicleId={vehicleId}
+                            assessmentId={assessmentId}
+                            readOnly={readOnly}
+                          />
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="ai-analysis">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <div className="aspect-video relative mb-4 border rounded-md overflow-hidden">
+                            <img
+                              src={selectedImage.imageUrl || "/placeholder.svg"}
+                              alt="Selected vehicle image"
+                              className="object-contain w-full h-full"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <AIVehicleAnalyzer
+                            imageUrl={selectedImage.imageUrl}
+                            imageId={selectedImage._id}
+                            vehicleId={vehicleId}
+                            assessmentId={assessmentId}
+                            onAnalysisComplete={handleAnalysisComplete}
+                          />
+                        </div>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                 </div>
               )}
 
@@ -194,19 +216,16 @@ export function VehicleImageAssessment({ vehicleId, assessmentId, readOnly = fal
 
               {images.length === 0 && (
                 <div className="mt-6 text-center p-8 border rounded-md bg-neutral-50 dark:bg-neutral-900">
-                  <div className="flex flex-col items-center">
-                    <AlertTriangle className="h-12 w-12 text-neutral-400 mb-4" />
-                    <p className="text-neutral-500">No {category} images available</p>
-                    {!readOnly && (
-                      <Button
-                        variant="outline"
-                        className="mt-4"
-                        onClick={() => document.getElementById("upload-button")?.click()}
-                      >
-                        Upload Images
-                      </Button>
-                    )}
-                  </div>
+                  <p className="text-neutral-500">No {category} images available</p>
+                  {!readOnly && (
+                    <Button
+                      variant="outline"
+                      className="mt-4"
+                      onClick={() => document.getElementById("upload-button")?.click()}
+                    >
+                      Upload Images
+                    </Button>
+                  )}
                 </div>
               )}
             </TabsContent>
