@@ -48,7 +48,7 @@ export default function QrCodePage() {
   }, [])
 
   const handleRegenerateQrCode = async () => {
-    if (!tenant) return
+    if (!tenant) {
 
     try {
       setRegenerating(true)
