@@ -36,9 +36,10 @@ export const createPublicAssessment = mutation({
       hasDents,
       needsDetailing,
       images,
-      clientIp,
-    } = args
-
+      // Check rate limit
+      const sanitizedEmail = sanitizeString(customerInfo.email)
+      const identifier = sanitizedEmail // Use sanitized email as identifier
+      const isRateLimited = await checkRateLimit(ctx, identifier, "publicAssessment", 5, 3600000) // 5 requests per hour
     // Get the tenant to retrieve the orgId
     const tenant = await ctx.db.get(tenantId)
     if (!tenant) {
