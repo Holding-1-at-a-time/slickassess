@@ -786,15 +786,14 @@ export const getLeadAnalytics = query({
         convertedLeads,
         conversionRate: conversionRate.toFixed(1),
         avgConversionTimeMinutes: Math.round(avgConversionTime / (1000 * 60)),
-      },
-      charts: {
-        leadsByMake: leadsByMakeChart,
-        leadsByDay: leadsByDayChart,
-      },
-      timeframe,
-    }
-  },
-})
+      // Verify tenant exists
+      const tenant = await ctx.db.get(tenantId)
+
+      if (!tenant) {
+        throw new ConvexError("Tenant not found")
+      }
+
+      const orgId = tenant.orgId
 
 // Create a lead assessment from public form with rate limiting
 export const createLeadAssessment = mutation({
