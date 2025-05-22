@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
 import { ConvexError } from "convex/values"
-import { requireAuth } from "./utils/auth"
+import { requireAuth, requireOrgRole } from "./utils/auth"
 import type { Id } from "./_generated/dataModel"
 import { randomUUID } from "crypto"
 
@@ -26,13 +26,45 @@ async function generateAssessmentNumber(ctx: any, orgId: string) {
   return `ASS-${String(nextNumber).padStart(5, "0")}`
 }
 
-// List leads by tenant
+// List leads by tenant with filtering and sorting
 export const listByTenant = query({
   args: {
     tenantId: v.string(),
+    filters: v.optional(
+      v.object({
+        status: v.optional(v.union(v.literal("all"), v.literal("converted"), v.literal("unconverted"))),
+        dateRange: v.optional(
+          v.object({
+            start: v.number(),
+            end: v.number(),
+          }),
+        ),
+        vehicleMake: v.optional(v.string()),
+        vehicleModel: v.optional(v.string()),
+        search: v.optional(v.string()),
+      }),
+    ),
+    sort: v.optional(
+      v.object({
+        field: v.union(
+          v.literal("createdAt"),
+          v.literal("customerName"),
+          v.literal("vehicleMake"),
+          v.literal("vehicleModel"),
+          v.literal("vehicleYear"),
+        ),
+        direction: v.union(v.literal("asc"), v.literal("desc")),
+      }),
+    ),
+    pagination: v.optional(
+      v.object({
+        limit: v.number(),
+        cursor: v.optional(v.string()),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
-    const { tenantId } = args
+    const { tenantId, filters, sort, pagination } = args
 
     // Verify tenant exists
     const tenant = await ctx.db
@@ -44,16 +76,156 @@ export const listByTenant = query({
       throw new ConvexError("Tenant not found")
     }
 
-    // Get unconverted leads for this tenant
+    // Start building the query
+    let query = ctx.db.query("leadAssessments").withIndex("by_tenantId", (q) => q.eq("tenantId", tenantId))
+
+    // Apply filters
+    if (filters) {
+      // Filter by status
+      if (filters.status) {
+        if (filters.status === "converted") {
+          query = query.filter((q) => q.neq(q.field("convertedToAssessment"), undefined))
+        } else if (filters.status === "unconverted") {
+          query = query.filter((q) => q.eq(q.field("convertedToAssessment"), undefined))
+        }
+      } else {
+        // Default to unconverted if not specified
+        query = query.filter((q) => q.eq(q.field("convertedToAssessment"), undefined))
+      }
+
+      // Filter by date range
+      if (filters.dateRange) {
+        query = query.filter((q) =>
+          q.and(
+            q.gte(q.field("createdAt"), filters.dateRange!.start),
+            q.lte(q.field("createdAt"), filters.dateRange!.end),
+          ),
+        )
+      }
+
+      // Filter by vehicle make
+      if (filters.vehicleMake) {
+        query = query.filter((q) => q.eq(q.field("vehicleInfo.make"), filters.vehicleMake))
+      }
+
+      // Filter by vehicle model
+      if (filters.vehicleModel) {
+        query = query.filter((q) => q.eq(q.field("vehicleInfo.model"), filters.vehicleModel))
+      }
+
+      // Search by customer name or email
+      if (filters.search) {
+        const search = filters.search.toLowerCase()
+        query = query.filter((q) =>
+          q.or(
+            q.contains(q.lower(q.field("customerInfo.name")), search),
+            q.contains(q.lower(q.field("customerInfo.email")), search),
+            q.contains(q.lower(q.field("vehicleInfo.make")), search),
+            q.contains(q.lower(q.field("vehicleInfo.model")), search),
+          ),
+        )
+      }
+    } else {
+      // Default to unconverted if no filters specified
+      query = query.filter((q) => q.eq(q.field("convertedToAssessment"), undefined))
+    }
+
+    // Apply sorting
+    if (sort) {
+      const direction = sort.direction === "asc" ? "asc" : "desc"
+
+      switch (sort.field) {
+        case "createdAt":
+          query = query.order(direction, (q) => q.field("createdAt"))
+          break
+        case "customerName":
+          query = query.order(direction, (q) => q.field("customerInfo.name"))
+          break
+        case "vehicleMake":
+          query = query.order(direction, (q) => q.field("vehicleInfo.make"))
+          break
+        case "vehicleModel":
+          query = query.order(direction, (q) => q.field("vehicleInfo.model"))
+          break
+        case "vehicleYear":
+          query = query.order(direction, (q) => q.field("vehicleInfo.year"))
+          break
+        default:
+          query = query.order("desc", (q) => q.field("createdAt"))
+      }
+    } else {
+      // Default sort by createdAt desc
+      query = query.order("desc", (q) => q.field("createdAt"))
+    }
+
+    // Apply pagination
+    if (pagination) {
+      const { limit, cursor } = pagination
+      if (cursor) {
+        const cursorObj = JSON.parse(cursor)
+        query = query.paginate(cursorObj, limit)
+      } else {
+        query = query.paginate({}, limit)
+      }
+
+      const paginatedResults = await query
+
+      return {
+        leads: paginatedResults.page,
+        continuationToken: paginatedResults.continuationToken
+          ? JSON.stringify(paginatedResults.continuationToken)
+          : null,
+      }
+    }
+
+    // If no pagination, just collect all results
+    const leads = await query.collect()
+    return { leads, continuationToken: null }
+  },
+})
+
+// Get a single lead by ID
+export const getById = query({
+  args: {
+    leadId: v.id("leadAssessments"),
+  },
+  handler: async (ctx, args) => {
+    const { leadId } = args
+
+    const lead = await ctx.db.get(leadId)
+    if (!lead) {
+      throw new ConvexError("Lead not found")
+    }
+
+    return lead
+  },
+})
+
+// Get unique vehicle makes and models for filtering
+export const getFilterOptions = query({
+  args: {
+    tenantId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { tenantId } = args
+
     const leads = await ctx.db
       .query("leadAssessments")
-      .withIndex("by_tenantId_and_convertedToAssessment", (q) =>
-        q.eq("tenantId", tenantId).eq("convertedToAssessment", undefined),
-      )
-      .order("desc", (q) => q.field("createdAt"))
+      .withIndex("by_tenantId", (q) => q.eq("tenantId", tenantId))
       .collect()
 
-    return leads
+    const makes = new Set<string>()
+    const models = new Set<string>()
+
+    leads.forEach((lead) => {
+      makes.add(lead.vehicleInfo.make)
+      models.add(lead.vehicleInfo.model)
+    })
+
+    return {
+      makes: Array.from(makes).sort(),
+      models: Array.from(models).sort(),
+    }
   },
 })
 
@@ -232,7 +404,352 @@ export const convertLeadToAssessment = mutation({
       createdAt: now,
     })
 
+    // Log analytics event
+    await ctx.db.insert("analyticsEvents", {
+      orgId: lead.tenantId,
+      eventType: "lead_converted",
+      eventData: {
+        leadId: lead._id,
+        assessmentId,
+        vehicleMake: lead.vehicleInfo.make,
+        vehicleModel: lead.vehicleInfo.model,
+        vehicleYear: lead.vehicleInfo.year,
+        conversionTime: now - lead.createdAt, // Time to convert in ms
+      },
+      userId,
+      timestamp: now,
+    })
+
     return assessmentId
+  },
+})
+
+// Bulk convert leads to assessments
+export const bulkConvertLeads = mutation({
+  args: {
+    leadIds: v.array(v.id("leadAssessments")),
+  },
+  handler: async (ctx, args) => {
+    const { leadIds } = args
+    const { userId } = await requireAuth(ctx)
+    const now = Date.now()
+
+    const results = {
+      success: [] as Id<"assessments">[],
+      failed: [] as Id<"leadAssessments">[],
+    }
+
+    // Process each lead
+    for (const leadId of leadIds) {
+      try {
+        // Get the lead
+        const lead = await ctx.db.get(leadId)
+        if (!lead || lead.convertedToAssessment) {
+          results.failed.push(leadId)
+          continue
+        }
+
+        // Create or get client
+        let clientId: Id<"clients">
+        const existingClient = await ctx.db
+          .query("clients")
+          .withIndex("by_orgId_and_email", (q) => q.eq("orgId", lead.tenantId).eq("email", lead.customerInfo.email))
+          .first()
+
+        if (existingClient) {
+          clientId = existingClient._id
+        } else {
+          clientId = await ctx.db.insert("clients", {
+            name: lead.customerInfo.name,
+            email: lead.customerInfo.email,
+            phone: lead.customerInfo.phone,
+            status: "active",
+            orgId: lead.tenantId,
+            clerkId: userId || "system",
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+
+        // Create vehicle
+        const vehicleId = await ctx.db.insert("vehicles", {
+          clientId,
+          vin: "",
+          make: lead.vehicleInfo.make,
+          model: lead.vehicleInfo.model,
+          year: lead.vehicleInfo.year,
+          color: lead.vehicleInfo.color,
+          orgId: lead.tenantId,
+          clerkId: userId || "system",
+          createdAt: now,
+          updatedAt: now,
+        })
+
+        // Generate assessment number
+        const assessmentNumber = await generateAssessmentNumber(ctx, lead.tenantId)
+
+        // Prepare identified issues
+        const identifiedIssues = []
+        if (lead.hasScratches) {
+          identifiedIssues.push({
+            section: "Exterior",
+            severity: "minor",
+            description: "Client-reported scratches",
+            imageIds: lead.imageIds,
+            aiDetected: false,
+          })
+        }
+        if (lead.hasDents) {
+          identifiedIssues.push({
+            section: "Exterior",
+            severity: "moderate",
+            description: "Client-reported dents",
+            imageIds: lead.imageIds,
+            aiDetected: false,
+          })
+        }
+
+        // Create assessment
+        const assessmentId = await ctx.db.insert("assessments", {
+          vehicleId,
+          clientId,
+          title: `${lead.vehicleInfo.year} ${lead.vehicleInfo.make} ${lead.vehicleInfo.model} Assessment`,
+          description: lead.description,
+          status: "draft",
+          orgId: lead.tenantId,
+          clerkId: userId || "system",
+          assessmentNumber,
+          assessmentDate: now,
+          mileage: null,
+          notes: `Converted from self-assessment lead ${lead._id}`,
+          sections: [
+            {
+              id: randomUUID(),
+              name: "Exterior",
+              condition: null,
+              notes: null,
+              imageIds: lead.imageIds,
+            },
+            {
+              id: randomUUID(),
+              name: "Interior",
+              condition: null,
+              notes: null,
+              imageIds: [],
+            },
+            {
+              id: randomUUID(),
+              name: "Engine Bay",
+              condition: null,
+              notes: null,
+              imageIds: [],
+            },
+            {
+              id: randomUUID(),
+              name: "Wheels & Tires",
+              condition: null,
+              notes: null,
+              imageIds: [],
+            },
+          ],
+          identifiedIssues,
+          recommendedServices: lead.needsDetailing
+            ? [
+                {
+                  name: "Full Detailing Service",
+                  description: "Client requested detailing service",
+                  priority: "medium",
+                },
+              ]
+            : [],
+          createdAt: now,
+          updatedAt: now,
+          createdBy: userId || "system",
+        })
+
+        // Mark the lead as converted
+        await ctx.db.patch(leadId, {
+          convertedToAssessment: assessmentId,
+          updatedAt: now,
+        })
+
+        // Log analytics event
+        await ctx.db.insert("analyticsEvents", {
+          orgId: lead.tenantId,
+          eventType: "lead_converted",
+          eventData: {
+            leadId: lead._id,
+            assessmentId,
+            vehicleMake: lead.vehicleInfo.make,
+            vehicleModel: lead.vehicleInfo.model,
+            vehicleYear: lead.vehicleInfo.year,
+            conversionTime: now - lead.createdAt,
+            bulkOperation: true,
+          },
+          userId,
+          timestamp: now,
+        })
+
+        results.success.push(assessmentId)
+      } catch (error) {
+        console.error(`Error converting lead ${leadId}:`, error)
+        results.failed.push(leadId)
+      }
+    }
+
+    return results
+  },
+})
+
+// Bulk delete leads
+export const bulkDeleteLeads = mutation({
+  args: {
+    leadIds: v.array(v.id("leadAssessments")),
+  },
+  handler: async (ctx, args) => {
+    const { leadIds } = args
+    const { userId } = await requireAuth(ctx)
+    const now = Date.now()
+
+    const results = {
+      success: [] as Id<"leadAssessments">[],
+      failed: [] as Id<"leadAssessments">[],
+    }
+
+    for (const leadId of leadIds) {
+      try {
+        const lead = await ctx.db.get(leadId)
+        if (!lead) {
+          results.failed.push(leadId)
+          continue
+        }
+
+        // Only allow deleting unconverted leads
+        if (lead.convertedToAssessment) {
+          results.failed.push(leadId)
+          continue
+        }
+
+        await ctx.db.delete(leadId)
+
+        // Log the action
+        await ctx.db.insert("auditLogs", {
+          orgId: lead.tenantId,
+          clerkId: userId || "system",
+          action: "deleteLead",
+          resourceType: "leadAssessment",
+          resourceId: lead._id,
+          details: "Deleted via bulk operation",
+          createdAt: now,
+        })
+
+        results.success.push(leadId)
+      } catch (error) {
+        console.error(`Error deleting lead ${leadId}:`, error)
+        results.failed.push(leadId)
+      }
+    }
+
+    return results
+  },
+})
+
+// Get lead analytics
+export const getLeadAnalytics = query({
+  args: {
+    tenantId: v.string(),
+    timeframe: v.optional(v.union(v.literal("7d"), v.literal("30d"), v.literal("90d"), v.literal("all"))),
+  },
+  handler: async (ctx, args) => {
+    const { tenantId, timeframe = "30d" } = args
+    const { userId } = await requireAuth(ctx)
+
+    // Ensure user has admin role
+    await requireOrgRole(ctx, tenantId, ["admin"])
+
+    // Calculate start date based on timeframe
+    let startDate = 0
+    const now = Date.now()
+
+    switch (timeframe) {
+      case "7d":
+        startDate = now - 7 * 24 * 60 * 60 * 1000
+        break
+      case "30d":
+        startDate = now - 30 * 24 * 60 * 60 * 1000
+        break
+      case "90d":
+        startDate = now - 90 * 24 * 60 * 60 * 1000
+        break
+      case "all":
+        startDate = 0
+        break
+    }
+
+    // Get all leads for the tenant in the timeframe
+    const leads = await ctx.db
+      .query("leadAssessments")
+      .withIndex("by_tenantId", (q) => q.eq("tenantId", tenantId))
+      .filter((q) => q.gte(q.field("createdAt"), startDate))
+      .collect()
+
+    // Get conversion events
+    const conversionEvents = await ctx.db
+      .query("analyticsEvents")
+      .withIndex("by_orgId_eventType", (q) => q.eq("orgId", tenantId).eq("eventType", "lead_converted"))
+      .filter((q) => q.gte(q.field("timestamp"), startDate))
+      .collect()
+
+    // Calculate metrics
+    const totalLeads = leads.length
+    const convertedLeads = leads.filter((lead) => lead.convertedToAssessment).length
+    const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0
+
+    // Calculate average time to conversion
+    let avgConversionTime = 0
+    if (conversionEvents.length > 0) {
+      const totalConversionTime = conversionEvents.reduce((sum, event) => {
+        return sum + ((event.eventData.conversionTime as number) || 0)
+      }, 0)
+      avgConversionTime = totalConversionTime / conversionEvents.length
+    }
+
+    // Group leads by vehicle make
+    const leadsByMake: Record<string, number> = {}
+    leads.forEach((lead) => {
+      const make = lead.vehicleInfo.make
+      leadsByMake[make] = (leadsByMake[make] || 0) + 1
+    })
+
+    // Group leads by day
+    const leadsByDay: Record<string, number> = {}
+    leads.forEach((lead) => {
+      const date = new Date(lead.createdAt).toISOString().split("T")[0]
+      leadsByDay[date] = (leadsByDay[date] || 0) + 1
+    })
+
+    // Sort and format for charts
+    const leadsByMakeChart = Object.entries(leadsByMake)
+      .sort((a, b) => b[1] - a[1])
+      .map(([make, count]) => ({ make, count }))
+
+    const leadsByDayChart = Object.entries(leadsByDay)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, count]) => ({ date, count }))
+
+    return {
+      summary: {
+        totalLeads,
+        convertedLeads,
+        conversionRate: conversionRate.toFixed(1),
+        avgConversionTimeMinutes: Math.round(avgConversionTime / (1000 * 60)),
+      },
+      charts: {
+        leadsByMake: leadsByMakeChart,
+        leadsByDay: leadsByDayChart,
+      },
+      timeframe,
+    }
   },
 })
 
@@ -292,9 +809,23 @@ export const createLeadAssessment = mutation({
       type: "new_lead",
       title: "New Lead Submitted",
       message: `A new lead has been submitted for ${customerInfo.name}'s ${vehicleInfo.year} ${vehicleInfo.make} ${vehicleInfo.model}`,
-      link: `/dashboard`, // Link to dashboard where leads are shown
+      link: `/leads`, // Link to leads page
       read: false,
       createdAt: now,
+    })
+
+    // Log analytics event
+    await ctx.db.insert("analyticsEvents", {
+      orgId: tenantId,
+      eventType: "lead_created",
+      eventData: {
+        leadId,
+        vehicleMake: vehicleInfo.make,
+        vehicleModel: vehicleInfo.model,
+        vehicleYear: vehicleInfo.year,
+        hasImages: images.length > 0,
+      },
+      timestamp: now,
     })
 
     return { success: true, leadId }
