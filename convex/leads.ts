@@ -4,8 +4,7 @@ import { ConvexError } from "convex/values"
 import { requireAuth, requireOrgRole } from "./utils/auth"
 import type { Id } from "./_generated/dataModel"
 import { randomUUID } from "crypto"
-
-// Import the sanitization utilities
+import { checkRateLimit } from "./utils/rate-limiter"
 import { sanitizeString, isValidEmail, isValidPhone } from "./utils/sanitize"
 
 // Helper function to generate assessment number
@@ -430,7 +429,7 @@ export const convertLeadToAssessment = mutation({
   },
 })
 
-// Bulk convert leads to assessments
+// Bulk convert leads to assessments with transaction-like behavior
 export const bulkConvertLeads = mutation({
   args: {
     leadIds: v.array(v.id("leadAssessments")),
@@ -440,22 +439,41 @@ export const bulkConvertLeads = mutation({
     const { userId } = await requireAuth(ctx)
     const now = Date.now()
 
+    // Check rate limit for bulk operations
+    await checkRateLimit(ctx, "bulk_convert_leads", userId, 10, 60 * 1000) // 10 operations per minute
+
+    // Validate all leads first to ensure they can be converted
+    const leadsToConvert = []
+    const invalidLeads = []
+
+    for (const leadId of leadIds) {
+      const lead = await ctx.db.get(leadId)
+      if (!lead || lead.convertedToAssessment) {
+        invalidLeads.push(leadId)
+      } else {
+        leadsToConvert.push(lead)
+      }
+    }
+
+    // If there are invalid leads, fail the entire operation
+    if (invalidLeads.length > 0) {
+      throw new ConvexError({
+        message: "Some leads cannot be converted",
+        code: "INVALID_LEADS",
+        invalidLeadIds: invalidLeads,
+      })
+    }
+
+    // Process all leads in a transaction-like manner
     const results = {
       success: [] as Id<"assessments">[],
       failed: [] as Id<"leadAssessments">[],
     }
 
-    // Process each lead
-    for (const leadId of leadIds) {
-      try {
-        // Get the lead
-        const lead = await ctx.db.get(leadId)
-        if (!lead || lead.convertedToAssessment) {
-          results.failed.push(leadId)
-          continue
-        }
-
-        // Create or get client
+    try {
+      // Create a batch of operations
+      for (const lead of leadsToConvert) {
+        // Find or create client
         let clientId: Id<"clients">
         const existingClient = await ctx.db
           .query("clients")
@@ -574,7 +592,7 @@ export const bulkConvertLeads = mutation({
         })
 
         // Mark the lead as converted
-        await ctx.db.patch(leadId, {
+        await ctx.db.patch(lead._id, {
           convertedToAssessment: assessmentId,
           updatedAt: now,
         })
@@ -597,17 +615,50 @@ export const bulkConvertLeads = mutation({
         })
 
         results.success.push(assessmentId)
-      } catch (error) {
-        console.error(`Error converting lead ${leadId}:`, error)
-        results.failed.push(leadId)
       }
+
+      // Create a single notification for all conversions
+      if (results.success.length > 0 && leadsToConvert.length > 0) {
+        await ctx.db.insert("notifications", {
+          userId: null,
+          orgId: leadsToConvert[0].tenantId,
+          type: "bulk_lead_converted",
+          title: "Bulk Lead Conversion",
+          message: `${results.success.length} leads have been converted to assessments`,
+          link: `/assessments`,
+          read: false,
+          createdAt: now,
+        })
+
+        // Log the bulk action
+        await ctx.db.insert("auditLogs", {
+          orgId: leadsToConvert[0].tenantId,
+          clerkId: userId || "system",
+          action: "bulkConvertLeads",
+          resourceType: "leadAssessment",
+          resourceId: "bulk",
+          details: JSON.stringify({
+            count: results.success.length,
+            assessmentIds: results.success,
+          }),
+          createdAt: now,
+        })
+      }
+    } catch (error) {
+      // If any operation fails, throw an error to abort the entire transaction
+      console.error("Error in bulk convert operation:", error)
+      throw new ConvexError({
+        message: "Bulk conversion failed",
+        code: "BULK_OPERATION_FAILED",
+        details: error instanceof Error ? error.message : String(error),
+      })
     }
 
     return results
   },
 })
 
-// Bulk delete leads
+// Bulk delete leads with transaction-like behavior
 export const bulkDeleteLeads = mutation({
   args: {
     leadIds: v.array(v.id("leadAssessments")),
@@ -617,43 +668,70 @@ export const bulkDeleteLeads = mutation({
     const { userId } = await requireAuth(ctx)
     const now = Date.now()
 
+    // Check rate limit for bulk operations
+    await checkRateLimit(ctx, "bulk_delete_leads", userId, 10, 60 * 1000) // 10 operations per minute
+
+    // Validate all leads first to ensure they can be deleted
+    const leadsToDelete = []
+    const invalidLeads = []
+
+    for (const leadId of leadIds) {
+      const lead = await ctx.db.get(leadId)
+      if (!lead) {
+        invalidLeads.push(leadId)
+      } else if (lead.convertedToAssessment) {
+        // Only allow deleting unconverted leads
+        invalidLeads.push(leadId)
+      } else {
+        leadsToDelete.push(lead)
+      }
+    }
+
+    // If there are invalid leads, fail the entire operation
+    if (invalidLeads.length > 0) {
+      throw new ConvexError({
+        message: "Some leads cannot be deleted",
+        code: "INVALID_LEADS",
+        invalidLeadIds: invalidLeads,
+      })
+    }
+
     const results = {
       success: [] as Id<"leadAssessments">[],
       failed: [] as Id<"leadAssessments">[],
     }
 
-    for (const leadId of leadIds) {
-      try {
-        const lead = await ctx.db.get(leadId)
-        if (!lead) {
-          results.failed.push(leadId)
-          continue
-        }
+    try {
+      // Process all leads in a transaction-like manner
+      for (const lead of leadsToDelete) {
+        await ctx.db.delete(lead._id)
+        results.success.push(lead._id)
+      }
 
-        // Only allow deleting unconverted leads
-        if (lead.convertedToAssessment) {
-          results.failed.push(leadId)
-          continue
-        }
-
-        await ctx.db.delete(leadId)
-
-        // Log the action
+      // Create a single notification and audit log for the bulk operation
+      if (results.success.length > 0 && leadsToDelete.length > 0) {
+        // Log the bulk action
         await ctx.db.insert("auditLogs", {
-          orgId: lead.tenantId,
+          orgId: leadsToDelete[0].tenantId,
           clerkId: userId || "system",
-          action: "deleteLead",
+          action: "bulkDeleteLeads",
           resourceType: "leadAssessment",
-          resourceId: lead._id,
-          details: "Deleted via bulk operation",
+          resourceId: "bulk",
+          details: JSON.stringify({
+            count: results.success.length,
+            leadIds: results.success,
+          }),
           createdAt: now,
         })
-
-        results.success.push(leadId)
-      } catch (error) {
-        console.error(`Error deleting lead ${leadId}:`, error)
-        results.failed.push(leadId)
       }
+    } catch (error) {
+      // If any operation fails, throw an error to abort the entire transaction
+      console.error("Error in bulk delete operation:", error)
+      throw new ConvexError({
+        message: "Bulk deletion failed",
+        code: "BULK_OPERATION_FAILED",
+        details: error instanceof Error ? error.message : String(error),
+      })
     }
 
     return results
@@ -759,7 +837,7 @@ export const getLeadAnalytics = query({
   },
 })
 
-// Create a lead assessment from public form
+// Create a lead assessment from public form with rate limiting
 export const createLeadAssessment = mutation({
   args: {
     tenantId: v.string(),
@@ -779,10 +857,25 @@ export const createLeadAssessment = mutation({
     hasDents: v.optional(v.boolean()),
     needsDetailing: v.optional(v.boolean()),
     images: v.array(v.string()),
+    clientIp: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { tenantId, customerInfo, vehicleInfo, description, hasScratches, hasDents, needsDetailing, images } = args
+    const {
+      tenantId,
+      customerInfo,
+      vehicleInfo,
+      description,
+      hasScratches,
+      hasDents,
+      needsDetailing,
+      images,
+      clientIp,
+    } = args
     const now = Date.now()
+
+    // Apply rate limiting based on IP address or tenant
+    const identifier = clientIp || tenantId
+    await checkRateLimit(ctx, "create_lead_assessment", identifier, 5, 60 * 1000) // 5 submissions per minute
 
     // Verify tenant exists
     const tenant = await ctx.db
@@ -840,6 +933,7 @@ export const createLeadAssessment = mutation({
       imageIds: images,
       createdAt: now,
       updatedAt: now,
+      sourceIp: clientIp ? sanitizeString(clientIp) : undefined,
     })
 
     // Create notification for new lead
