@@ -1,3 +1,17 @@
+/**
+    * @description      : 
+    * @author           : rrome
+    * @group            : 
+    * @created          : 22/05/2025 - 07:53:44
+    * 
+    * MODIFICATION LOG
+    * - Version         : 1.0.0
+    * - Date            : 22/05/2025
+    * - Author          : rrome
+    * - Modification    : 
+**/
+"use node"
+
 import { internalAction } from "./_generated/server"
 import { internal } from "./_generated/api"
 import { prepareTrainingData, createFineTuningJob, deployFineTunedModel } from "../lib/ai/training-pipeline"
