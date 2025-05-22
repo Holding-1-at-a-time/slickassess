@@ -5,9 +5,6 @@ import { requireAuth, requireOrgRole } from "./utils/auth"
 import type { Id } from "./_generated/dataModel"
 import { randomUUID } from "crypto"
 import { checkRateLimit } from "./utils/rate-limiter"
-import { sanitizeString, isValidEmail, isValidPhone } from "./utils/sanitize"
-
-// Helper function to generate assessment number
 async function generateAssessmentNumber(ctx: any, orgId: string) {
   const existing = await ctx.db
     .query("assessments")
@@ -24,6 +21,9 @@ async function generateAssessmentNumber(ctx: any, orgId: string) {
       if (match) nextNumber = Number.parseInt(match[0], 10) + 1
     }
   }
+
+  return `ASMT-${String(nextNumber).padStart(5, "0")}`
+}
 
   return `ASS-${String(nextNumber).padStart(5, "0")}`
 }
