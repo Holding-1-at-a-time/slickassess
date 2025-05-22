@@ -4,39 +4,54 @@ import { ConvexError } from "convex/values"
 import { requireAuth, requireOrgRole } from "./utils/auth"
 import type { Id } from "./_generated/dataModel"
 import { randomUUID } from "crypto"
-import { checkRateLimit } from "./utils/rate-limiter"
+import { checkRateLimit, recordRequest } from "./utils/rate-limiter"
 import { sanitizeString, isValidEmail, isValidPhone } from "./utils/sanitize"
 
-// Helper function to generate assessment number more efficiently
-async function generateAssessmentNumber(ctx: any, orgId: string) {
-  // Use a dedicated counter table for better performance
-  const counterDoc = await ctx.db
-    .query("counters")
-    .withIndex("by_orgId_and_type", (q) => q.eq("orgId", orgId).eq("type", "assessmentNumber"))
-    .first()
+// Counter table for assessment numbers to avoid full table scans
+export const getNextAssessmentNumber = mutation({
+  args: {
+    orgId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = args
 
-  let nextNumber = 1
+    // Get or create the counter document for this org
+    const counterDoc = await ctx.db
+      .query("counters")
+      .withIndex("by_orgId_and_type", (q) => q.eq("orgId", orgId).eq("type", "assessmentNumber"))
+      .first()
 
-  if (counterDoc) {
-    // Increment the existing counter
-    nextNumber = counterDoc.currentValue + 1
-    await ctx.db.patch(counterDoc._id, { currentValue: nextNumber })
-  } else {
-    // Create a new counter starting at 1
-    await ctx.db.insert("counters", {
-      orgId,
-      type: "assessmentNumber",
-      currentValue: nextNumber,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    })
-  }
+    let nextNumber = 1
 
-  return `ASMT-${String(nextNumber).padStart(5, "0")}`
-}
+    if (counterDoc) {
+      // Increment existing counter
+      nextNumber = counterDoc.currentValue + 1
+      await ctx.db.patch(counterDoc._id, {
+        currentValue: nextNumber,
+        updatedAt: Date.now(),
+      })
+    } else {
+      // Create new counter starting at 1
+      await ctx.db.insert("counters", {
+        orgId,
+        type: "assessmentNumber",
+        currentValue: nextNumber,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    }
+
+    return `ASMT-${String(nextNumber).padStart(5, "0")}`
+  },
+})
 
 // Helper function to convert a lead to an assessment
-async function convertLeadToAssessmentHelper(ctx: any, leadId: Id<"leadAssessments">, userId: string, orgId: string) {
+export async function convertLeadToAssessment(
+  ctx: any,
+  leadId: Id<"leadAssessments">,
+  userId: string,
+  options?: { bulkOperation?: boolean },
+) {
   const now = Date.now()
 
   // Get the lead
@@ -45,14 +60,15 @@ async function convertLeadToAssessmentHelper(ctx: any, leadId: Id<"leadAssessmen
     throw new ConvexError("Lead not found")
   }
 
-  // Verify the lead belongs to the user's organization
-  if (lead.tenantId !== orgId) {
-    throw new ConvexError("Access denied: Lead does not belong to your organization")
-  }
-
   // Check if already converted
   if (lead.convertedToAssessment) {
     throw new ConvexError("Lead already converted to assessment")
+  }
+
+  // Verify the lead belongs to the user's organization
+  const userOrgs = await ctx.runQuery(requireOrgRole, { orgId: lead.tenantId })
+  if (!userOrgs) {
+    throw new ConvexError("You don't have permission to convert this lead")
   }
 
   // Create or get client
@@ -91,8 +107,10 @@ async function convertLeadToAssessmentHelper(ctx: any, leadId: Id<"leadAssessmen
     updatedAt: now,
   })
 
-  // Generate assessment number
-  const assessmentNumber = await generateAssessmentNumber(ctx, lead.tenantId)
+  // Generate assessment number using the counter
+  const assessmentNumber = await ctx.runMutation(getNextAssessmentNumber, {
+    orgId: lead.tenantId,
+  })
 
   // Prepare identified issues based on lead data
   const identifiedIssues = []
@@ -179,28 +197,31 @@ async function convertLeadToAssessmentHelper(ctx: any, leadId: Id<"leadAssessmen
     updatedAt: now,
   })
 
-  // Create notification for the conversion
-  await ctx.db.insert("notifications", {
-    userId: null, // Will be filled in by a background job that finds org admins
-    orgId: lead.tenantId,
-    type: "lead_converted",
-    title: "Lead Converted to Assessment",
-    message: `Lead for ${lead.customerInfo.name}'s ${lead.vehicleInfo.year} ${lead.vehicleInfo.make} ${lead.vehicleInfo.model} has been converted to a full assessment`,
-    link: `/assessments/${assessmentId}`,
-    read: false,
-    createdAt: now,
-  })
+  // Only create notification for individual conversions, not bulk
+  if (!options?.bulkOperation) {
+    // Create notification for the conversion
+    await ctx.db.insert("notifications", {
+      userId: null, // Will be filled in by a background job that finds org admins
+      orgId: lead.tenantId,
+      type: "lead_converted",
+      title: "Lead Converted to Assessment",
+      message: `Lead for ${lead.customerInfo.name}'s ${lead.vehicleInfo.year} ${lead.vehicleInfo.make} ${lead.vehicleInfo.model} has been converted to a full assessment`,
+      link: `/assessments/${assessmentId}`,
+      read: false,
+      createdAt: now,
+    })
 
-  // Log the action
-  await ctx.db.insert("auditLogs", {
-    orgId: lead.tenantId,
-    clerkId: userId || "system",
-    action: "convertLeadToAssessment",
-    resourceType: "leadAssessment",
-    resourceId: lead._id,
-    details: JSON.stringify({ assessmentId }),
-    createdAt: now,
-  })
+    // Log the action
+    await ctx.db.insert("auditLogs", {
+      orgId: lead.tenantId,
+      clerkId: userId || "system",
+      action: "convertLeadToAssessment",
+      resourceType: "leadAssessment",
+      resourceId: lead._id,
+      details: JSON.stringify({ assessmentId }),
+      createdAt: now,
+    })
+  }
 
   // Log analytics event
   await ctx.db.insert("analyticsEvents", {
@@ -213,6 +234,7 @@ async function convertLeadToAssessmentHelper(ctx: any, leadId: Id<"leadAssessmen
       vehicleModel: lead.vehicleInfo.model,
       vehicleYear: lead.vehicleInfo.year,
       conversionTime: now - lead.createdAt, // Time to convert in ms
+      bulkOperation: options?.bulkOperation || false,
     },
     userId,
     timestamp: now,
@@ -260,14 +282,9 @@ export const listByTenant = query({
   },
   handler: async (ctx, args) => {
     const { tenantId, filters, sort, pagination } = args
-    const { userId, orgId } = await requireAuth(ctx)
+    const { userId } = await requireAuth(ctx)
 
-    // Verify tenant belongs to the user's organization
-    if (tenantId !== orgId) {
-      throw new ConvexError("Access denied: You can only view leads for your organization")
-    }
-
-    // Verify tenant exists
+    // Verify tenant exists and user has access to it
     const tenant = await ctx.db
       .query("tenants")
       .withIndex("by_orgId", (q) => q.eq("orgId", tenantId))
@@ -276,6 +293,9 @@ export const listByTenant = query({
     if (!tenant) {
       throw new ConvexError("Tenant not found")
     }
+
+    // Verify the user has access to this tenant's organization
+    await requireOrgRole(ctx, tenantId)
 
     // Start building the query
     let query = ctx.db.query("leadAssessments").withIndex("by_tenantId", (q) => q.eq("tenantId", tenantId))
@@ -317,7 +337,7 @@ export const listByTenant = query({
       // Search by customer name, email, or vehicle details - FIXED SECURITY ISSUE
       if (filters.search && filters.search.trim() !== "") {
         // Sanitize and validate search input
-        const sanitizedSearch = filters.search.trim().toLowerCase()
+        const sanitizedSearch = sanitizeString(filters.search.trim().toLowerCase())
 
         // Use Convex's built-in search capabilities safely
         query = query.filter((q) =>
@@ -392,10 +412,9 @@ export const listByTenant = query({
 export const getById = query({
   args: {
     leadId: v.id("leadAssessments"),
-    orgId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { leadId, orgId } = args
+    const { leadId } = args
     const { userId } = await requireAuth(ctx)
 
     const lead = await ctx.db.get(leadId)
@@ -403,10 +422,8 @@ export const getById = query({
       throw new ConvexError("Lead not found")
     }
 
-    // Verify the lead belongs to the user's organization
-    if (lead.tenantId !== orgId) {
-      throw new ConvexError("Access denied: Lead does not belong to your organization")
-    }
+    // Verify the user has access to this lead's organization
+    await requireOrgRole(ctx, lead.tenantId)
 
     return lead
   },
@@ -419,12 +436,10 @@ export const getFilterOptions = query({
   },
   handler: async (ctx, args) => {
     const { tenantId } = args
-    const { userId, orgId } = await requireAuth(ctx)
+    const { userId } = await requireAuth(ctx)
 
-    // Verify tenant belongs to the user's organization
-    if (tenantId !== orgId) {
-      throw new ConvexError("Access denied: You can only view leads for your organization")
-    }
+    // Verify the user has access to this tenant's organization
+    await requireOrgRole(ctx, tenantId)
 
     const leads = await ctx.db
       .query("leadAssessments")
@@ -447,17 +462,16 @@ export const getFilterOptions = query({
 })
 
 // Convert a lead to a full assessment
-export const convertLeadToAssessment = mutation({
+export const convertLeadToAssessmentMutation = mutation({
   args: {
     leadAssessmentId: v.id("leadAssessments"),
-    orgId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { leadAssessmentId, orgId } = args
+    const { leadAssessmentId } = args
     const { userId } = await requireAuth(ctx)
 
-    // Use the helper function to convert the lead
-    return convertLeadToAssessmentHelper(ctx, leadAssessmentId, userId, orgId)
+    // Use the shared helper function
+    return await convertLeadToAssessment(ctx, leadAssessmentId, userId)
   },
 })
 
@@ -468,11 +482,29 @@ export const bulkConvertLeads = mutation({
   },
   handler: async (ctx, args) => {
     const { leadIds } = args
-    const { userId, orgId } = await requireAuth(ctx)
+    const { userId } = await requireAuth(ctx)
     const now = Date.now()
 
     // Check rate limit for bulk operations
-    await checkRateLimit(ctx, "bulk_convert_leads", userId, 10, 60 * 1000) // 10 operations per minute
+    const identifier = userId
+    await ctx.runMutation(recordRequest, {
+      identifier,
+      action: "bulk_convert_leads",
+    })
+
+    const rateLimit = await ctx.runQuery(checkRateLimit, {
+      identifier,
+      action: "bulk_convert_leads",
+      config: {
+        maxRequests: 10,
+        windowMs: 60 * 1000, // 10 operations per minute
+      },
+    })
+
+    if (rateLimit.isRateLimited) {
+      const secondsUntilReset = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+      throw new ConvexError(`Rate limit exceeded. Try again in ${secondsUntilReset} seconds.`)
+    }
 
     // Validate all leads first to ensure they can be converted
     const leadsToConvert = []
@@ -482,11 +514,14 @@ export const bulkConvertLeads = mutation({
       const lead = await ctx.db.get(leadId)
       if (!lead || lead.convertedToAssessment) {
         invalidLeads.push(leadId)
-      } else if (lead.tenantId !== orgId) {
-        // Verify the lead belongs to the user's organization
-        invalidLeads.push(leadId)
       } else {
-        leadsToConvert.push(lead)
+        // Verify the user has access to this lead's organization
+        try {
+          await requireOrgRole(ctx, lead.tenantId)
+          leadsToConvert.push(lead)
+        } catch (error) {
+          invalidLeads.push(leadId)
+        }
       }
     }
 
@@ -509,8 +544,7 @@ export const bulkConvertLeads = mutation({
       // Create a batch of operations
       for (const lead of leadsToConvert) {
         try {
-          // Use the helper function to convert each lead
-          const assessmentId = await convertLeadToAssessmentHelper(ctx, lead._id, userId, orgId)
+          const assessmentId = await convertLeadToAssessment(ctx, lead._id, userId, { bulkOperation: true })
           results.success.push(assessmentId)
         } catch (error) {
           console.error(`Error converting lead ${lead._id}:`, error)
@@ -566,11 +600,29 @@ export const bulkDeleteLeads = mutation({
   },
   handler: async (ctx, args) => {
     const { leadIds } = args
-    const { userId, orgId } = await requireAuth(ctx)
+    const { userId } = await requireAuth(ctx)
     const now = Date.now()
 
     // Check rate limit for bulk operations
-    await checkRateLimit(ctx, "bulk_delete_leads", userId, 10, 60 * 1000) // 10 operations per minute
+    const identifier = userId
+    await ctx.runMutation(recordRequest, {
+      identifier,
+      action: "bulk_delete_leads",
+    })
+
+    const rateLimit = await ctx.runQuery(checkRateLimit, {
+      identifier,
+      action: "bulk_delete_leads",
+      config: {
+        maxRequests: 10,
+        windowMs: 60 * 1000, // 10 operations per minute
+      },
+    })
+
+    if (rateLimit.isRateLimited) {
+      const secondsUntilReset = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+      throw new ConvexError(`Rate limit exceeded. Try again in ${secondsUntilReset} seconds.`)
+    }
 
     // Validate all leads first to ensure they can be deleted
     const leadsToDelete = []
@@ -583,11 +635,14 @@ export const bulkDeleteLeads = mutation({
       } else if (lead.convertedToAssessment) {
         // Only allow deleting unconverted leads
         invalidLeads.push(leadId)
-      } else if (lead.tenantId !== orgId) {
-        // Verify the lead belongs to the user's organization
-        invalidLeads.push(leadId)
       } else {
-        leadsToDelete.push(lead)
+        // Verify the user has access to this lead's organization
+        try {
+          await requireOrgRole(ctx, lead.tenantId)
+          leadsToDelete.push(lead)
+        } catch (error) {
+          invalidLeads.push(leadId)
+        }
       }
     }
 
@@ -650,12 +705,7 @@ export const getLeadAnalytics = query({
   },
   handler: async (ctx, args) => {
     const { tenantId, timeframe = "30d" } = args
-    const { userId, orgId } = await requireAuth(ctx)
-
-    // Verify tenant belongs to the user's organization
-    if (tenantId !== orgId) {
-      throw new ConvexError("Access denied: You can only view analytics for your organization")
-    }
+    const { userId } = await requireAuth(ctx)
 
     // Ensure user has admin role
     await requireOrgRole(ctx, tenantId, ["admin"])
@@ -784,7 +834,27 @@ export const createLeadAssessment = mutation({
 
     // Apply rate limiting based on IP address or tenant
     const identifier = clientIp || tenantId
-    await checkRateLimit(ctx, "create_lead_assessment", identifier, 5, 60 * 1000) // 5 submissions per minute
+
+    // Record the request for rate limiting
+    await ctx.runMutation(recordRequest, {
+      identifier,
+      action: "create_lead_assessment",
+    })
+
+    // Check if rate limited
+    const rateLimit = await ctx.runQuery(checkRateLimit, {
+      identifier,
+      action: "create_lead_assessment",
+      config: {
+        maxRequests: 5,
+        windowMs: 60 * 1000, // 5 submissions per minute
+      },
+    })
+
+    if (rateLimit.isRateLimited) {
+      const secondsUntilReset = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+      throw new ConvexError(`Rate limit exceeded. Try again in ${secondsUntilReset} seconds.`)
+    }
 
     // Verify tenant exists
     const tenant = await ctx.db

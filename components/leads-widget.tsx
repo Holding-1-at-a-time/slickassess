@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { useOrganization, useAuth } from "@clerk/nextjs"
+import { useOrganization } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Loader2, Filter, ArrowUpDown, AlertTriangle, Trash2, CheckCircle2 } from "lucide-react"
@@ -26,7 +26,6 @@ import { useToast } from "@/components/ui/use-toast"
 
 export function LeadsWidget() {
   const { organization } = useOrganization()
-  const { userId } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
   const [converting, setConverting] = useState<Id<"leadAssessments"> | null>(null)
@@ -45,28 +44,15 @@ export function LeadsWidget() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showConvertModal, setShowConvertModal] = useState(false)
   const [bulkActionInProgress, setBulkActionInProgress] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [tenantId, setTenantId] = useState<string | undefined>(organization?.id)
-
-  useEffect(() => {
-    setTenantId(organization?.id)
-  }, [organization?.id])
-
-  // Redirect if no organization
-  useEffect(() => {
-    if (!organization?.id && typeof window !== "undefined") {
-      router.push("/organization/create")
-    }
-  }, [organization?.id, router])
 
   // Get filter options (makes, models)
   const filterOptions = useQuery(api.leads.getFilterOptions, {
-    tenantId: tenantId || "",
+    tenantId: organization?.id || "",
   })
 
   // Get leads with filtering and sorting
   const leadsResult = useQuery(api.leads.listByTenant, {
-    tenantId: tenantId || "",
+    tenantId: organization?.id || "",
     filters: {
       status: filters.status,
       vehicleMake: filters.vehicleMake,
@@ -85,15 +71,9 @@ export function LeadsWidget() {
   const bulkDeleteMutation = useMutation(api.leads.bulkDeleteLeads)
 
   async function handleConvert(leadId: Id<"leadAssessments">) {
-    if (!organization?.id) return
-
     try {
       setConverting(leadId)
-      setError(null)
-      const assessmentId = await convertLeadMutation({
-        leadAssessmentId: leadId,
-        orgId: organization.id,
-      })
+      const assessmentId = await convertLeadMutation({ leadAssessmentId: leadId })
 
       toast({
         title: "Lead Converted",
@@ -110,7 +90,6 @@ export function LeadsWidget() {
       router.push(`/assessments/${assessmentId}`)
     } catch (error) {
       console.error("Failed to convert lead:", error)
-      setError("Failed to convert lead. Please try again.")
       toast({
         title: "Conversion Failed",
         description: error instanceof Error ? error.message : "Failed to convert lead. Please try again.",
@@ -122,12 +101,11 @@ export function LeadsWidget() {
   }
 
   async function handleBulkConvert() {
-    if (selectedLeads.length === 0 || !organization?.id) return
+    if (selectedLeads.length === 0) return
 
     try {
       setBulkActionInProgress(true)
       setIsConverting(true)
-      setError(null)
 
       const result = await bulkConvertMutation({ leadIds: selectedLeads })
 
@@ -146,7 +124,6 @@ export function LeadsWidget() {
       setSelectedLeads([])
     } catch (error) {
       console.error("Failed to bulk convert leads:", error)
-      setError("Failed to bulk convert leads. Please try again.")
 
       // Handle structured error from Convex
       if (error && typeof error === "object" && "data" in error) {
@@ -179,12 +156,11 @@ export function LeadsWidget() {
   }
 
   async function handleBulkDelete() {
-    if (selectedLeads.length === 0 || !organization?.id) return
+    if (selectedLeads.length === 0) {
 
     try {
       setBulkActionInProgress(true)
       setIsDeleting(true)
-      setError(null)
 
       const result = await bulkDeleteMutation({ leadIds: selectedLeads })
 
@@ -198,7 +174,6 @@ export function LeadsWidget() {
       setSelectedLeads([])
     } catch (error) {
       console.error("Failed to bulk delete leads:", error)
-      setError("Failed to bulk delete leads. Please try again.")
 
       // Handle structured error from Convex
       if (error && typeof error === "object" && "data" in error) {
@@ -269,18 +244,6 @@ export function LeadsWidget() {
       <Card className="p-6 bg-neutral-100 dark:bg-neutral-800">
         <div className="flex items-center justify-center h-48">
           <Loader2 className="h-8 w-8 animate-spin text-[#00ae98]" />
-        </div>
-      </Card>
-    )
-  }
-
-  if (error) {
-    return (
-      <Card className="p-6 bg-neutral-100 dark:bg-neutral-800">
-        <div className="flex flex-col items-center justify-center h-48 space-y-4">
-          <AlertTriangle className="h-12 w-12 text-red-500" />
-          <p className="text-center text-red-500">{error}</p>
-          <Button onClick={() => setError(null)}>Try Again</Button>
         </div>
       </Card>
     )

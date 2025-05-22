@@ -2,15 +2,6 @@ import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
 export default defineSchema({
-  // Add the counters table for efficient sequence generation
-  counters: defineTable({
-    orgId: v.string(),
-    type: v.string(), // e.g., "assessmentNumber", "invoiceNumber", etc.
-    currentValue: v.number(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  }).index("by_orgId_and_type", ["orgId", "type"]),
-
   // Users table (for additional user data beyond what Clerk provides)
   users: defineTable({
     clerkId: v.string(),

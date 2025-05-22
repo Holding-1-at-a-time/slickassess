@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { useOrganization } from "@clerk/nextjs"
+import { useOrganization, useAuth } from "@clerk/nextjs"
 import { useRouter } from "next/navigation"
 import { withAuth } from "@/components/with-auth"
 import { Button } from "@/components/ui/button"
@@ -28,10 +28,12 @@ import { cn } from "@/lib/utils"
 import { LeadAnalytics } from "@/components/lead-analytics"
 import { formatDate } from "@/utils/date-formatter"
 import { useLeadToast } from "@/components/lead-toast"
+import { useConfirmationDialog } from "@/components/confirmation-dialog"
 
 function LeadsPage() {
   const router = useRouter()
   const { organization } = useOrganization()
+  const { userId } = useAuth()
   const leadToast = useLeadToast({ router })
   const [selectedLeads, setSelectedLeads] = useState<Id<"leadAssessments">[]>([])
   const [search, setSearch] = useState("")
@@ -44,6 +46,8 @@ function LeadsPage() {
     direction: "desc" as "asc" | "desc",
   })
   const [activeTab, setActiveTab] = useState<"list" | "analytics">("list")
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isConverting, setIsConverting] = useState(false)
 
   // Get filter options (makes, models)
   const filterOptions = useQuery(api.leads.getFilterOptions, {
@@ -67,10 +71,18 @@ function LeadsPage() {
   const bulkDeleteMutation = useMutation(api.leads.bulkDeleteLeads)
   const convertLeadToAssessmentMutation = useMutation(api.leads.convertLeadToAssessment)
 
+  // Reset selected leads when leads change
+  useEffect(() => {
+    setSelectedLeads([])
+  }, [filters, search, sort.field, sort.direction])
+
   async function handleBulkConvert() {
-    if (selectedLeads.length === 0) return
+    if (selectedLeads.length === 0) {
+      return
+    }
 
     try {
+      setIsConverting(true)
       const result = await bulkConvertMutation({ leadIds: selectedLeads })
       if (result.success.length > 0) {
         leadToast.showBulkConversionSuccess(result.success.length)
@@ -82,51 +94,39 @@ function LeadsPage() {
     } catch (error) {
       console.error("Failed to bulk convert leads:", error)
       leadToast.showActionError("Bulk Conversion", error as Error)
+    } finally {
+      setIsConverting(false)
     }
   }
 
-  async function handleBulkDelete() {
-    if (selectedLeads.length === 0) return
+  const { openDialog: openDeleteDialog, DialogComponent: DeleteDialogComponent } = useConfirmationDialog({
+    title: "Confirm Deletion",
+    description: `Are you sure you want to delete ${selectedLeads.length} leads? This action cannot be undone.`,
+    confirmText: "Delete Leads",
+    isDestructive: true,
+    onConfirm: async () => {
+      if (selectedLeads.length === 0) {
+        return
+      }
 
-    // Use a custom confirmation dialog instead of native confirm
-    const { openDialog, DialogComponent } = useConfirmationDialog({
-      title: "Confirm Deletion",
-      description: `Are you sure you want to delete ${selectedLeads.length} leads? This action cannot be undone.`,
-      onConfirm: async () => {
-        try {
-          const result = await bulkDeleteMutation({ leadIds: selectedLeads })
-          if (result.success.length > 0) {
-            leadToast.showBulkDeletionSuccess(result.success.length)
-            setSelectedLeads([])
-          }
-          if (result.failed.length > 0) {
-            leadToast.showActionError("Bulk Deletion", new Error(`Failed to delete ${result.failed.length} leads`))
-          }
-        } catch (error) {
-          console.error("Failed to bulk delete leads:", error)
-          leadToast.showActionError("Bulk Deletion", error as Error)
+      try {
+        setIsDeleting(true)
+        const result = await bulkDeleteMutation({ leadIds: selectedLeads })
+        if (result.success.length > 0) {
+          leadToast.showBulkDeletionSuccess(result.success.length)
+          setSelectedLeads([])
         }
+        if (result.failed.length > 0) {
+          leadToast.showActionError("Bulk Deletion", new Error(`Failed to delete ${result.failed.length} leads`))
+        }
+      } catch (error) {
+        console.error("Failed to bulk delete leads:", error)
+        leadToast.showActionError("Bulk Deletion", error as Error)
+      } finally {
+        setIsDeleting(false)
       }
-    });
-
-    // Open the dialog instead of using confirm
-    openDialog();
-    return;
-
-    try {
-      const result = await bulkDeleteMutation({ leadIds: selectedLeads })
-      if (result.success.length > 0) {
-        leadToast.showBulkDeletionSuccess(result.success.length)
-        setSelectedLeads([])
-      }
-      if (result.failed.length > 0) {
-        leadToast.showActionError("Bulk Deletion", new Error(`Failed to delete ${result.failed.length} leads`))
-      }
-    } catch (error) {
-      console.error("Failed to bulk delete leads:", error)
-      leadToast.showActionError("Bulk Deletion", error as Error)
-    }
-  }
+    },
+  })
 
   function handleSelectAll() {
     if (selectedLeads.length === leads.length) {
@@ -169,7 +169,7 @@ function LeadsPage() {
     }
   }
 
-  if (!organization) {
+  if (!organization || !userId) {
     return (
       <div className="container mx-auto py-8">
         <div className="flex items-center justify-center h-64">
@@ -181,6 +181,8 @@ function LeadsPage() {
 
   return (
     <div className="container mx-auto py-8">
+      <DeleteDialogComponent />
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Leads Management</h1>
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "list" | "analytics")}>
@@ -285,11 +287,30 @@ function LeadsPage() {
               <div className="flex items-center space-x-2">
                 {selectedLeads.length > 0 && (
                   <>
-                    <Button variant="destructive" onClick={handleBulkDelete}>
-                      Delete ({selectedLeads.length})
+                    <Button variant="destructive" onClick={openDeleteDialog} disabled={isDeleting}>
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        `Delete (${selectedLeads.length})`
+                      )}
                     </Button>
-                    <Button variant="default" onClick={handleBulkConvert} className="bg-[#00ae98] hover:bg-[#009a86]">
-                      Convert ({selectedLeads.length})
+                    <Button
+                      variant="default"
+                      onClick={handleBulkConvert}
+                      className="bg-[#00ae98] hover:bg-[#009a86]"
+                      disabled={isConverting}
+                    >
+                      {isConverting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Converting...
+                        </>
+                      ) : (
+                        `Convert (${selectedLeads.length})`
+                      )}
                     </Button>
                   </>
                 )}
