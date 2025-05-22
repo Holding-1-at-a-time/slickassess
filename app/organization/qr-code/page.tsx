@@ -70,7 +70,7 @@ export default function QrCodePage() {
   }
 
   const handleDownloadQrCode = () => {
-    if (!tenant?.qrCodeUrl) return
+    if (!tenant?.qrCodeUrl) {
 
     // Create a temporary link element
     const link = document.createElement("a")
