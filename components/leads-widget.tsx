@@ -156,7 +156,7 @@ export function LeadsWidget() {
   }
 
   async function handleBulkDelete() {
-    if (selectedLeads.length === 0) return
+    if (selectedLeads.length === 0) {
 
     try {
       setBulkActionInProgress(true)
