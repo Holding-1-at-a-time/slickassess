@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "npm-run-all --parallel dev:frontend dev:backend",
+    "dev:frontend": "next dev --turbopack",
+    "dev:backend": "convex dev",
+    "predev": "convex dev --until-success && convex dashboard",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -51,6 +54,7 @@
     "date-fns": "^4.1.0",
     "embla-carousel-react": "8.6.0",
     "googleapis": "^149.0.0",
+    "https": "^1.0.0",
     "input-otp": "1.4.2",
     "lucide-react": "^0.511.0",
     "next": "15.3.2",
