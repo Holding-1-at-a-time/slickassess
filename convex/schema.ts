@@ -31,7 +31,8 @@ export default defineSchema({
     updatedAt: v.number(), // Timestamp
   })
     .index("by_orgId", ["orgId"]) // Primary index for data isolation
-    .index("by_orgId_and_name", ["orgId", "name"]), // For searching by name within org
+    .index("by_orgId_and_name", ["orgId", "name"]) // For searching by name within org
+    .index("by_orgId_and_email", ["orgId", "email"]), // For finding clients by email
 
   // Vehicles table
   vehicles: defineTable({
@@ -402,4 +403,23 @@ export default defineSchema({
   })
     .index("by_orgId_eventType", ["orgId", "eventType"])
     .index("by_orgId_timestamp", ["orgId", "timestamp"]),
+
+  // Tenants table
+  tenants: defineTable({
+    name: v.string(),
+    orgId: v.string(), // Clerk organization ID
+    qrSlug: v.string(), // Unique slug for QR code
+    qrCodeUrl: v.optional(v.string()), // Data URL of the QR code
+    branding: v.optional(
+      v.object({
+        logo: v.optional(v.string()),
+        primaryColor: v.optional(v.string()),
+        secondaryColor: v.optional(v.string()),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_qrSlug", ["qrSlug"]),
 })

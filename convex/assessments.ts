@@ -1,6 +1,7 @@
 import { mutation, query, action } from "./_generated/server"
 import { v } from "convex/values"
 import { requireAuth, requireOrgRole } from "./utils/auth"
+import { ConvexError } from "convex-dev/server"
 
 // Helper function to generate assessment number
 async function generateAssessmentNumber(ctx: any, orgId: string) {
@@ -398,5 +399,113 @@ export const remove = mutation({
     })
 
     return args.id
+  },
+})
+
+// Create a public assessment from QR code scan
+export const createPublicAssessment = mutation({
+  args: {
+    tenantId: v.id("tenants"),
+    customerInfo: v.object({
+      name: v.string(),
+      email: v.string(),
+      phone: v.string(),
+    }),
+    vehicleInfo: v.object({
+      make: v.string(),
+      model: v.string(),
+      year: v.number(),
+      color: v.string(),
+    }),
+    description: v.string(),
+    images: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { tenantId, customerInfo, vehicleInfo, description, images } = args
+
+    // Get the tenant to retrieve the orgId
+    const tenant = await ctx.db.get(tenantId)
+    if (!tenant) {
+      throw new ConvexError("Tenant not found")
+    }
+
+    const orgId = tenant.orgId
+
+    // Create or get client
+    let clientId
+    const existingClient = await ctx.db
+      .query("clients")
+      .withIndex("by_orgId_and_email", (q) => q.eq("orgId", orgId).eq("email", customerInfo.email))
+      .first()
+
+    if (existingClient) {
+      clientId = existingClient._id
+    } else {
+      clientId = await ctx.db.insert("clients", {
+        name: customerInfo.name,
+        email: customerInfo.email,
+        phone: customerInfo.phone,
+        status: "active",
+        orgId,
+        clerkId: "public-submission", // Mark as public submission
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    }
+
+    // Create vehicle
+    const vehicleId = await ctx.db.insert("vehicles", {
+      clientId,
+      vin: "", // Empty for public submissions
+      make: vehicleInfo.make,
+      model: vehicleInfo.model,
+      year: vehicleInfo.year,
+      color: vehicleInfo.color,
+      orgId,
+      clerkId: "public-submission", // Mark as public submission
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+
+    // Create assessment
+    const assessmentId = await ctx.db.insert("assessments", {
+      vehicleId,
+      title: `Self-Assessment: ${vehicleInfo.year} ${vehicleInfo.make} ${vehicleInfo.model}`,
+      description,
+      status: "pending_review", // Special status for public submissions
+      orgId,
+      clerkId: "public-submission", // Mark as public submission
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+
+    // Add images if provided
+    if (images.length > 0) {
+      for (const url of images) {
+        await ctx.db.insert("vehicleImages", {
+          vehicleId,
+          url,
+          category: "customer_submitted",
+          isPrimary: false,
+          orgId,
+          clerkId: "public-submission",
+          createdAt: Date.now(),
+        })
+      }
+    }
+
+    // Create notification for organization admins
+    await ctx.db.insert("notifications", {
+      userId: null, // Will be filled in by a background job that finds org admins
+      orgId,
+      type: "new_assessment",
+      title: "New Self-Assessment Submitted",
+      message: `A new self-assessment has been submitted for a ${vehicleInfo.year} ${vehicleInfo.make} ${vehicleInfo.model}`,
+      link: `/assessments/${assessmentId}`,
+      read: false,
+      createdAt: Date.now(),
+    })
+
+    return { success: true, assessmentId }
   },
 })
