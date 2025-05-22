@@ -1,112 +1,154 @@
-import { mutation, query } from "./_generated/server"
+import { mutation } from "./_generated/server"
 import { v } from "convex/values"
 import { ConvexError } from "convex/values"
-import { applyRateLimit, rateLimits } from "./utils/rate-limiter"
-import { upsertClient, createVehicle, createAssessment, storeImages, createAuditLog } from "./utils/client-helpers"
+import { checkRateLimit, recordRequest } from "./utils/rate-limiter"
+import { sanitizeString, isValidEmail, isValidPhone } from "./utils/sanitize"
 
-// Create a public assessment (no auth required)
-export const create = mutation({
+// Create a public assessment from QR code scan
+export const createPublicAssessment = mutation({
   args: {
     tenantId: v.id("tenants"),
-    clientInfo: v.object({
+    customerInfo: v.object({
       name: v.string(),
       email: v.string(),
-      phone: v.optional(v.string()),
+      phone: v.string(),
     }),
     vehicleInfo: v.object({
       make: v.string(),
       model: v.string(),
       year: v.number(),
-      color: v.optional(v.string()),
-      licensePlate: v.optional(v.string()),
-      mileage: v.optional(v.number()),
+      color: v.string(),
     }),
-    assessmentInfo: v.object({
-      hasScratches: v.boolean(),
-      hasDents: v.boolean(),
-      hasRust: v.boolean(),
-      hasInteriorDamage: v.boolean(),
-      notes: v.optional(v.string()),
-    }),
-    imageUrls: v.array(v.string()),
-    // IP address or other identifier for rate limiting
-    clientIdentifier: v.string(),
+    description: v.string(),
+    hasScratches: v.optional(v.boolean()),
+    hasDents: v.optional(v.boolean()),
+    needsDetailing: v.optional(v.boolean()),
+    images: v.array(v.string()),
+    clientIp: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const {
+      tenantId,
+      customerInfo,
+      vehicleInfo,
+      description,
+      hasScratches,
+      hasDents,
+      needsDetailing,
+      images,
+      // Check rate limit
+      const sanitizedEmail = sanitizeString(customerInfo.email)
+      const identifier = sanitizedEmail // Use sanitized email as identifier
+      const isRateLimited = await checkRateLimit(ctx, identifier, "publicAssessment", 5, 3600000) // 5 requests per hour
+    // Get the tenant to retrieve the orgId
+    const tenant = await ctx.db.get(tenantId)
+    if (!tenant) {
+      throw new ConvexError("Tenant not found")
+    }
+
+    const orgId = tenant.orgId
     const now = Date.now()
 
-    // Apply rate limiting
-    await ctx.runMutation(applyRateLimit, {
-      identifier: args.clientIdentifier,
+    // Use IP address for rate limiting if available, fallback to email
+    const identifier = clientIp || customerInfo.email
+
+    // Record the request for rate limiting
+    await ctx.runMutation(recordRequest, {
+      identifier,
       action: "publicAssessment",
-      config: rateLimits.publicAssessment,
     })
 
-    // Verify tenant exists and is valid
-    const tenant = await ctx.db.get(args.tenantId)
-    if (!tenant) {
-      throw new ConvexError("Tenant not found")
+    // Check if rate limited
+    const rateLimit = await ctx.runQuery(checkRateLimit, {
+      identifier,
+      action: "publicAssessment",
+      config: {
+        maxRequests: 5,
+        windowMs: 3600000, // 5 requests per hour
+      },
+    })
+
+    if (rateLimit.isRateLimited) {
+      const secondsUntilReset = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+      throw new ConvexError(`Rate limit exceeded. Try again in ${secondsUntilReset} seconds.`)
     }
 
-    // Verify the tenant has an active QR slug
-    if (!tenant.activeQrSlug) {
-      throw new ConvexError("Invalid tenant configuration")
+    // Validate and sanitize customer information
+    const sanitizedCustomerInfo = {
+      name: sanitizeString(customerInfo.name),
+      email: sanitizeString(customerInfo.email),
+      phone: sanitizeString(customerInfo.phone),
     }
 
-    // Get organization ID from tenant
-    const orgId = tenant.orgId
-
-    // 1. Upsert client (handles race conditions)
-    const clientId = await upsertClient(ctx, orgId, args.clientInfo, now)
-
-    // 2. Create vehicle
-    const vehicleId = await createVehicle(ctx, orgId, clientId, args.vehicleInfo, now)
-
-    // 3. Create assessment
-    const assessmentId = await createAssessment(ctx.db, orgId, vehicleId, args.vehicleInfo, args.assessmentInfo, now)
-
-    // 4. Store images (if any)
-    if (args.imageUrls.length > 0) {
-      await storeImages(ctx.db, orgId, vehicleId, assessmentId, args.imageUrls, now)
+    // Validate email format
+    if (!isValidEmail(sanitizedCustomerInfo.email)) {
+      throw new ConvexError("Invalid email format")
     }
 
-    // 5. Create audit log
-    await createAuditLog(
-      ctx.db,
+    // Validate phone format
+    if (!isValidPhone(sanitizedCustomerInfo.phone)) {
+      throw new ConvexError("Invalid phone number format")
+    }
+
+    // Sanitize vehicle information
+    const sanitizedVehicleInfo = {
+      make: sanitizeString(vehicleInfo.make),
+      model: sanitizeString(vehicleInfo.model),
+      year: vehicleInfo.year,
+      color: sanitizeString(vehicleInfo.color),
+    }
+
+    // Validate year is reasonable
+    const currentYear = new Date().getFullYear()
+    if (sanitizedVehicleInfo.year < 1900 || sanitizedVehicleInfo.year > currentYear + 1) {
+      throw new ConvexError("Invalid vehicle year")
+    }
+
+    // Sanitize description
+    const sanitizedDescription = sanitizeString(description)
+
+    // Create lead assessment with sanitized data
+    const leadId = await ctx.db.insert("leadAssessments", {
+      tenantId: orgId,
+      customerInfo: sanitizedCustomerInfo,
+      vehicleInfo: sanitizedVehicleInfo,
+      description: sanitizedDescription,
+      hasScratches: hasScratches || false,
+      hasDents: hasDents || false,
+      needsDetailing: needsDetailing || false,
+      imageIds: images,
+      createdAt: now,
+      updatedAt: now,
+      sourceIp: clientIp ? sanitizeString(clientIp) : undefined,
+    })
+
+    // Create notification for organization admins
+    await ctx.db.insert("notifications", {
+      userId: null, // Will be filled in by a background job that finds org admins
       orgId,
-      "createPublicAssessment",
-      "assessment",
-      assessmentId.toString(),
-      `QR code self-assessment submitted for ${args.vehicleInfo.make} ${args.vehicleInfo.model}`,
-      now,
-    )
+      type: "new_lead",
+      title: "New Lead Submitted",
+      message: `A new lead has been submitted for ${sanitizedCustomerInfo.name}'s ${sanitizedVehicleInfo.year} ${sanitizedVehicleInfo.make} ${sanitizedVehicleInfo.model}`,
+      link: `/leads`, // Link to leads page instead of dashboard
+      read: false,
+      createdAt: now,
+    })
 
-    return {
-      success: true,
-      assessmentId,
-    }
-  },
-})
+    // Log analytics event
+    await ctx.db.insert("analyticsEvents", {
+      orgId,
+      eventType: "lead_created",
+      eventData: {
+        leadId,
+        vehicleMake: sanitizedVehicleInfo.make,
+        vehicleModel: sanitizedVehicleInfo.model,
+        vehicleYear: sanitizedVehicleInfo.year,
+        hasImages: images.length > 0,
+        source: "qr_code",
+      },
+      timestamp: now,
+    })
 
-// Get public assessments for a tenant
-export const getByTenant = query({
-  args: {
-    tenantId: v.id("tenants"),
-  },
-  handler: async (ctx, args) => {
-    const tenant = await ctx.db.get(args.tenantId)
-    if (!tenant) {
-      throw new ConvexError("Tenant not found")
-    }
-
-    // Query assessments created via public submission
-    const assessments = await ctx.db
-      .query("assessments")
-      .withIndex("by_orgId", (q) => q.eq("orgId", tenant.orgId))
-      .filter((q) => q.eq(q.field("clerkId"), "public-submission"))
-      .order("desc")
-      .collect()
-
-    return assessments
+    return { success: true, leadId }
   },
 })

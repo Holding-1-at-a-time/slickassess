@@ -1,84 +1,107 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { FormError } from "@/components/ui/form-error"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import type { AssessmentInfoSchema } from "@/lib/validations/self-assessment-schema"
-import { FormError } from "@/components/ui/form-error"
 
 interface StepThreeProps {
-  assessmentInfo: AssessmentInfoSchema
-  updateAssessmentInfo: (field: keyof AssessmentInfoSchema, value: boolean | string) => void
-  nextStep: () => void
-  prevStep: () => void
-  getFieldError: (field: string) => string | undefined
+  data: {
+    description: string
+    hasScratches: boolean
+    hasDents: boolean
+    needsDetailing: boolean
+  }
+  errors: Record<string, string>
+  update: (field: string, value: string | boolean) => void
+  next: () => void
+  back: () => void
 }
 
-export function StepThree({ assessmentInfo, updateAssessmentInfo, nextStep, prevStep, getFieldError }: StepThreeProps) {
+export function StepThree({ data, errors, update, next, back }: StepThreeProps) {
+  const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
+
+  const handleNext = () => {
+    // Validate description
+    const newErrors: Record<string, string> = {}
+
+    if (!data.description.trim()) {
+      newErrors.description = "Please provide a description of the service needed"
+    } else if (data.description.length < 10) {
+      newErrors.description = "Description is too short"
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setLocalErrors(newErrors)
+      return
+    }
+
+    setLocalErrors({})
+    next()
+  }
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold mb-4">Vehicle Condition</h2>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Label htmlFor="description">Describe what service you need for your vehicle</Label>
+        <Textarea
+          id="description"
+          value={data.description}
+          onChange={(e) => update("description", e.target.value)}
+          placeholder="Please describe what service you need..."
+          rows={5}
+          className={errors.description || localErrors.description ? "border-red-500" : ""}
+        />
+        {(errors.description || localErrors.description) && (
+          <FormError message={errors.description || localErrors.description} />
+        )}
+      </div>
 
       <div className="space-y-4">
+        <Label>Vehicle Condition</Label>
+
         <div className="flex items-center space-x-2">
           <Checkbox
-            id="scratches"
-            checked={assessmentInfo.hasScratches}
-            onCheckedChange={(checked) => updateAssessmentInfo("hasScratches", checked === true)}
+            id="hasScratches"
+            checked={data.hasScratches}
+            onCheckedChange={(checked) => update("hasScratches", Boolean(checked))}
           />
-          <Label htmlFor="scratches">Vehicle has visible scratches or paint damage</Label>
+          <Label htmlFor="hasScratches" className="cursor-pointer">
+            My vehicle has scratches that need repair
+          </Label>
         </div>
 
         <div className="flex items-center space-x-2">
           <Checkbox
-            id="dents"
-            checked={assessmentInfo.hasDents}
-            onCheckedChange={(checked) => updateAssessmentInfo("hasDents", checked === true)}
+            id="hasDents"
+            checked={data.hasDents}
+            onCheckedChange={(checked) => update("hasDents", Boolean(checked))}
           />
-          <Label htmlFor="dents">Vehicle has dents or body damage</Label>
+          <Label htmlFor="hasDents" className="cursor-pointer">
+            My vehicle has dents that need repair
+          </Label>
         </div>
 
         <div className="flex items-center space-x-2">
           <Checkbox
-            id="rust"
-            checked={assessmentInfo.hasRust}
-            onCheckedChange={(checked) => updateAssessmentInfo("hasRust", checked === true)}
+            id="needsDetailing"
+            checked={data.needsDetailing}
+            onCheckedChange={(checked) => update("needsDetailing", Boolean(checked))}
           />
-          <Label htmlFor="rust">Vehicle has rust or corrosion</Label>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="interior"
-            checked={assessmentInfo.hasInteriorDamage}
-            onCheckedChange={(checked) => updateAssessmentInfo("hasInteriorDamage", checked === true)}
-          />
-          <Label htmlFor="interior">Vehicle has interior damage</Label>
+          <Label htmlFor="needsDetailing" className="cursor-pointer">
+            I'm interested in detailing services
+          </Label>
         </div>
       </div>
 
-      <div className="space-y-2 pt-4">
-        <Label htmlFor="notes">Additional Notes</Label>
-        <Textarea
-          id="notes"
-          value={assessmentInfo.notes || ""}
-          onChange={(e) => updateAssessmentInfo("notes", e.target.value)}
-          placeholder="Please describe any issues or concerns about your vehicle..."
-          rows={4}
-          className={getFieldError("notes") ? "border-red-500" : ""}
-        />
-        {getFieldError("notes") && <FormError message={getFieldError("notes")} />}
-      </div>
-
-      {getFieldError("form") && <FormError message={getFieldError("form")} />}
-
-      <div className="flex justify-between pt-4 gap-4">
-        <Button variant="outline" onClick={prevStep} className="flex-1">
+      <div className="flex justify-between pt-4">
+        <Button type="button" variant="outline" onClick={back}>
           Back
         </Button>
-        <Button onClick={nextStep} className="flex-1">
-          Next: Upload Photos
+        <Button type="button" onClick={handleNext}>
+          Next
         </Button>
       </div>
     </div>

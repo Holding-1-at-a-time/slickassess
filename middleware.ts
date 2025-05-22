@@ -1,34 +1,47 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
+import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
+import { THEME_COOKIE_NAME } from "./lib/theme"
 
-// Define protected routes that require authentication
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/organization(.*)", "/api(.*)", "/trpc(.*)"])
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/scan/(.*)",
+  "/api/webhooks/(.*)",
+  "/api/cron/(.*)",
+])
 
-// Define routes that require admin role
-const isAdminRoute = createRouteMatcher(["/dashboard/admin(.*)", "/organization/settings(.*)"])
+export default clerkMiddleware((auth, req: NextRequest) => {
+  // Handle theme detection
+  const response = NextResponse.next()
 
-export default clerkMiddleware(async (auth, req) => {
-  const { userId, orgId, orgRole } = auth
+  // Check if theme cookie exists
+  const themeCookie = req.cookies.get(THEME_COOKIE_NAME)
 
-  // Check if the route is protected
-  if (isProtectedRoute(req)) {
-    // This will automatically redirect to sign-in if the user is not signed in
-    await auth.protect()
-  }
-
-  // Check if the route requires admin role
-  if (isAdminRoute(req)) {
-    await auth.protect({
-      role: "org:admin",
+  // If no theme cookie and it's a system theme request, detect from headers
+  if (!themeCookie && req.headers.get("sec-ch-prefers-color-scheme")) {
+    const prefersDark = req.headers.get("sec-ch-prefers-color-scheme") === "dark"
+    response.cookies.set(THEME_COOKIE_NAME, prefersDark ? "dark" : "light", {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: "lax",
     })
   }
+
+  // Protect private routes
+  if (!isPublicRoute(req)) {
+    auth().protect()
+  }
+
+  return response
 })
 
-// Configure which paths the middleware should run on
 export const config = {
   matcher: [
-    // Skip Next.js internals and static files
+    // Skip Next.js internals and all static files, unless found in search params
     "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // Always run for API/trpc routes
+    // Always run for API routes
     "/(api|trpc)(.*)",
   ],
 }

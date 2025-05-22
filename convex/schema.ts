@@ -90,11 +90,77 @@ export default defineSchema({
     clerkId: v.string(), // Clerk user ID who created this
     createdAt: v.number(), // Timestamp
     updatedAt: v.number(), // Timestamp
+    // New fields for assessment structure
+    assessmentNumber: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    assessmentDate: v.optional(v.number()),
+    mileage: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    sections: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          name: v.string(),
+          condition: v.union(v.string(), v.null()),
+          notes: v.union(v.string(), v.null()),
+          imageIds: v.array(v.string()),
+        }),
+      ),
+    ),
+    identifiedIssues: v.optional(
+      v.array(
+        v.object({
+          section: v.string(),
+          severity: v.string(),
+          description: v.string(),
+          imageIds: v.optional(v.array(v.string())),
+          aiDetected: v.optional(v.boolean()),
+        }),
+      ),
+    ),
+    recommendedServices: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          description: v.string(),
+          priority: v.string(),
+        }),
+      ),
+    ),
+    overallCondition: v.optional(v.string()),
+    aiSummary: v.optional(v.string()),
+    createdBy: v.optional(v.string()),
   })
     .index("by_orgId", ["orgId"]) // Primary index for data isolation
     .index("by_vehicleId", ["vehicleId"]) // For filtering by vehicle
     .index("by_assignedTo", ["assignedTo"]) // For filtering by assignee
     .index("by_orgId_and_status", ["orgId", "status"]), // For filtering by status within org
+
+  // Lead Assessments table (from QR code submissions)
+  leadAssessments: defineTable({
+    tenantId: v.id("tenants"), // Tenant/organization ID
+    customerInfo: v.object({
+      name: v.string(),
+      email: v.string(),
+      phone: v.string(),
+    }),
+    vehicleInfo: v.object({
+      make: v.string(),
+      model: v.string(),
+      year: v.number(),
+      color: v.string(),
+    }),
+    description: v.string(),
+    hasScratches: v.optional(v.boolean()),
+    hasDents: v.optional(v.boolean()),
+    needsDetailing: v.optional(v.boolean()),
+    imageIds: v.array(v.string()),
+    convertedToAssessment: v.optional(v.id("assessments")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tenantId", ["tenantId"])
+    .index("by_tenantId_and_convertedToAssessment", ["tenantId", "convertedToAssessment"]),
 
   // Audit logs table
   auditLogs: defineTable({
