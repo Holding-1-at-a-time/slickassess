@@ -168,13 +168,14 @@ export default defineSchema({
     clerkId: v.string(),
     action: v.string(), // "createVehicle", "updateClient", etc.
     resourceType: v.string(), // "vehicle", "client", "assessment", etc.
-    resourceId: v.string(), // ID of the resource
-    details: v.optional(v.string()), // Additional details
+    resourceId: v.id(), // ID of the resource
+    details: v.optional(v.any()), // Additional details
     createdAt: v.number(), // Timestamp
   })
     .index("by_orgId", ["orgId"])
-    .index("by_resourceType_and_resourceId", ["resourceType", "resourceId"])
-    .index("by_orgId_and_createdAt", ["orgId", "createdAt"]),
+    .index("by_clerkId", ["clerkId"])
+    .index("by_action", ["action"])
+    .index("by_resourceType_resourceId", ["resourceType", "resourceId"]),
 
   // Image annotations table
   imageAnnotations: defineTable({
@@ -201,6 +202,9 @@ export default defineSchema({
     createdBy: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
+    summary: v.optional(v.string()),
+    aiGenerated: v.optional(v.boolean()),
+    updatedBy: v.optional(v.string()),
   })
     .index("by_imageId", ["imageId"])
     .index("by_vehicleId", ["vehicleId"])
@@ -506,4 +510,21 @@ export default defineSchema({
   })
     .index("by_identifier_and_action", ["identifier", "action"])
     .index("by_expiresAt", ["expiresAt"]), // For cleanup
+
+  // Add an AI feedback table
+  aiFeedback: defineTable({
+    imageId: v.id("vehicleImages"),
+    assessmentId: v.optional(v.id("assessments")),
+    rating: v.string(),
+    feedback: v.string(),
+    originalPredictions: v.array(v.any()),
+    finalAnnotations: v.array(v.any()),
+    orgId: v.string(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_imageId", ["imageId"])
+    .index("by_assessmentId", ["assessmentId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_rating", ["rating"]),
 })

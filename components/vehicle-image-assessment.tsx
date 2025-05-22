@@ -11,7 +11,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { useQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { Plus } from "lucide-react"
+import { Plus, ImageIcon, AlertTriangle } from "lucide-react"
 
 interface VehicleImageAssessmentProps {
   vehicleId: Id<"vehicles">
@@ -26,7 +26,7 @@ export function VehicleImageAssessment({ vehicleId, assessmentId, readOnly = fal
   const [activeTab, setActiveTab] = useState("exterior")
   const [refreshKey, setRefreshKey] = useState(0)
 
-  const toast = useToast()
+  const { toast } = useToast()
 
   // Fetch vehicle images from Convex
   const vehicleImages = useQuery(api.images.getVehicleImages, { vehicleId }) || []
@@ -103,7 +103,10 @@ export function VehicleImageAssessment({ vehicleId, assessmentId, readOnly = fal
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Vehicle Images</CardTitle>
+        <CardTitle className="flex items-center">
+          <ImageIcon className="mr-2 h-5 w-5 text-[#00AE98]" />
+          Vehicle Images
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="exterior" onValueChange={setActiveTab}>
@@ -191,16 +194,19 @@ export function VehicleImageAssessment({ vehicleId, assessmentId, readOnly = fal
 
               {images.length === 0 && (
                 <div className="mt-6 text-center p-8 border rounded-md bg-neutral-50 dark:bg-neutral-900">
-                  <p className="text-neutral-500">No {category} images available</p>
-                  {!readOnly && (
-                    <Button
-                      variant="outline"
-                      className="mt-4"
-                      onClick={() => document.getElementById("upload-button")?.click()}
-                    >
-                      Upload Images
-                    </Button>
-                  )}
+                  <div className="flex flex-col items-center">
+                    <AlertTriangle className="h-12 w-12 text-neutral-400 mb-4" />
+                    <p className="text-neutral-500">No {category} images available</p>
+                    {!readOnly && (
+                      <Button
+                        variant="outline"
+                        className="mt-4"
+                        onClick={() => document.getElementById("upload-button")?.click()}
+                      >
+                        Upload Images
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </TabsContent>

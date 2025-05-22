@@ -2,44 +2,21 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Label } from "@/components/ui/label"
 import { toast } from "@/components/ui/use-toast"
-import { ThumbsUp, ThumbsDown, Edit, Loader2 } from "lucide-react"
 import { useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { Loader2, ThumbsUp, ThumbsDown, Send } from "lucide-react"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label"
 
 interface AIFeedbackFormProps {
-  imageId: Id<"vehicleImages">
+  imageId: Id<"images">
   assessmentId?: Id<"assessments">
-  originalPredictions: Array<{
-    id: string
-    type: string
-    confidence: number
-    boundingBox: {
-      x: number
-      y: number
-      width: number
-      height: number
-    }
-    category: string
-    severity: string
-  }>
-  currentAnnotations: Array<{
-    id: string
-    type: string
-    x: number
-    y: number
-    width?: number
-    height?: number
-    radius?: number
-    category: string
-    severity: string
-  }>
-  onFeedbackSubmitted?: () => void
+  originalPredictions: any[]
+  currentAnnotations: any[]
+  onFeedbackSubmitted: () => void
 }
 
 export function AIFeedbackForm({
@@ -49,36 +26,39 @@ export function AIFeedbackForm({
   currentAnnotations,
   onFeedbackSubmitted,
 }: AIFeedbackFormProps) {
-  const [feedbackType, setFeedbackType] = useState<"confirmation" | "correction" | "rejection">("confirmation")
-  const [feedbackNotes, setFeedbackNotes] = useState("")
+  const [feedbackRating, setFeedbackRating] = useState<"accurate" | "inaccurate" | null>(null)
+  const [feedbackText, setFeedbackText] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const saveFeedbackMutation = useMutation(api.aiTraining.saveFeedback)
+  const submitAIFeedback = useMutation(api.ai.submitFeedback)
 
   const handleSubmitFeedback = async () => {
+    if (!feedbackRating) {
+      toast({
+        title: "Please select a rating",
+        description: "Let us know if the AI detection was accurate or inaccurate",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsSubmitting(true)
     try {
-      await saveFeedbackMutation({
+      await submitAIFeedback({
         imageId,
         assessmentId,
+        rating: feedbackRating,
+        feedback: feedbackText,
         originalPredictions,
-        correctedAnnotations: currentAnnotations,
-        feedbackType,
-        feedbackNotes: feedbackNotes || undefined,
+        finalAnnotations: currentAnnotations,
       })
 
       toast({
         title: "Feedback Submitted",
-        description: "Thank you for helping improve our AI model!",
+        description: "Thank you for helping us improve our AI detection",
       })
 
-      if (onFeedbackSubmitted) {
-        onFeedbackSubmitted()
-      }
-
-      // Reset the form
-      setFeedbackType("confirmation")
-      setFeedbackNotes("")
+      onFeedbackSubmitted()
     } catch (error: any) {
       console.error("Error submitting feedback:", error)
       toast({
@@ -92,62 +72,55 @@ export function AIFeedbackForm({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>AI Feedback</CardTitle>
-        <CardDescription>Help improve our AI by providing feedback on the damage detection</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label>How accurate was the AI detection?</Label>
-          <RadioGroup value={feedbackType} onValueChange={(value) => setFeedbackType(value as any)}>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="confirmation" id="confirmation" />
-              <Label htmlFor="confirmation" className="flex items-center">
-                <ThumbsUp className="mr-2 h-4 w-4 text-green-500" />
-                Accurate (I confirmed all detections)
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="correction" id="correction" />
-              <Label htmlFor="correction" className="flex items-center">
-                <Edit className="mr-2 h-4 w-4 text-amber-500" />
-                Partially Accurate (I made some corrections)
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="rejection" id="rejection" />
-              <Label htmlFor="rejection" className="flex items-center">
-                <ThumbsDown className="mr-2 h-4 w-4 text-red-500" />
-                Inaccurate (I rejected and corrected most detections)
-              </Label>
-            </div>
-          </RadioGroup>
-        </div>
+    <div className="space-y-4">
+      <h3 className="text-lg font-medium">How accurate was the AI detection?</h3>
 
-        <div className="space-y-2">
-          <Label htmlFor="feedback-notes">Additional Notes (Optional)</Label>
-          <Textarea
-            id="feedback-notes"
-            placeholder="Please provide any additional feedback about the AI detection..."
-            value={feedbackNotes}
-            onChange={(e) => setFeedbackNotes(e.target.value)}
-            rows={4}
-          />
+      <RadioGroup value={feedbackRating || ""} onValueChange={(value) => setFeedbackRating(value as any)}>
+        <div className="flex space-x-4">
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="accurate" id="accurate" />
+            <Label htmlFor="accurate" className="flex items-center">
+              <ThumbsUp className="h-4 w-4 mr-1 text-green-500" />
+              Accurate
+            </Label>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="inaccurate" id="inaccurate" />
+            <Label htmlFor="inaccurate" className="flex items-center">
+              <ThumbsDown className="h-4 w-4 mr-1 text-red-500" />
+              Inaccurate
+            </Label>
+          </div>
         </div>
-      </CardContent>
-      <CardFooter>
-        <Button onClick={handleSubmitFeedback} disabled={isSubmitting}>
-          {isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Submitting...
-            </>
-          ) : (
-            "Submit Feedback"
-          )}
-        </Button>
-      </CardFooter>
-    </Card>
+      </RadioGroup>
+
+      <div>
+        <Label htmlFor="feedback" className="block mb-2">
+          Additional feedback (optional)
+        </Label>
+        <Textarea
+          id="feedback"
+          placeholder="Please provide any additional feedback about the AI detection..."
+          value={feedbackText}
+          onChange={(e) => setFeedbackText(e.target.value)}
+          rows={4}
+        />
+      </div>
+
+      <Button onClick={handleSubmitFeedback} disabled={isSubmitting || !feedbackRating} className="w-full">
+        {isSubmitting ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Submitting...
+          </>
+        ) : (
+          <>
+            <Send className="mr-2 h-4 w-4" />
+            Submit Feedback
+          </>
+        )}
+      </Button>
+    </div>
   )
 }

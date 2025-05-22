@@ -15,6 +15,8 @@ export type Annotation = {
   text?: string
   severity?: "minor" | "moderate" | "severe"
   category?: string
+  description?: string
+  confidence?: number
 }
 
 // Save annotations for an image
@@ -36,8 +38,11 @@ export const saveAnnotations = mutation({
         text: v.optional(v.string()),
         severity: v.optional(v.string()),
         category: v.optional(v.string()),
+        description: v.optional(v.string()),
+        confidence: v.optional(v.number()),
       }),
     ),
+    summary: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { userId, orgId } = await requireAuth(ctx)
@@ -73,7 +78,9 @@ export const saveAnnotations = mutation({
       // Update existing annotations
       await ctx.db.patch(existingAnnotations._id, {
         annotations: args.annotations,
+        summary: args.summary || existingAnnotations.summary,
         updatedAt: now,
+        updatedBy: userId,
       })
 
       return existingAnnotations._id
@@ -84,10 +91,13 @@ export const saveAnnotations = mutation({
         vehicleId: args.vehicleId,
         assessmentId: args.assessmentId,
         annotations: args.annotations,
+        summary: args.summary || "",
         orgId,
         createdBy: userId,
         createdAt: now,
         updatedAt: now,
+        updatedBy: userId,
+        aiGenerated: true,
       })
 
       // Log the action
