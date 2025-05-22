@@ -314,21 +314,21 @@ export const listByTenant = query({
         query = query.filter((q) => q.eq(q.field("convertedToAssessment"), undefined))
       }
 
-      // Filter by date range
-      if (filters.dateRange) {
+      // Search by customer name, email, or vehicle details
+      if (filters.search && filters.search.trim() !== "") {
+        // Properly sanitize search input using the utility function
+        const sanitizedSearch = sanitizeSearchQuery(filters.search.trim().toLowerCase())
+
+        // Use Convex's built-in search capabilities safely
         query = query.filter((q) =>
-          q.and(
-            q.gte(q.field("createdAt"), filters.dateRange!.start),
-            q.lte(q.field("createdAt"), filters.dateRange!.end),
+          q.or(
+            q.contains(q.lower(q.field("customerInfo.name")), sanitizedSearch),
+            q.contains(q.lower(q.field("customerInfo.email")), sanitizedSearch),
+            q.contains(q.lower(q.field("vehicleInfo.make")), sanitizedSearch),
+            q.contains(q.lower(q.field("vehicleInfo.model")), sanitizedSearch),
           ),
         )
       }
-
-      // Filter by vehicle make
-      if (filters.vehicleMake) {
-        query = query.filter((q) => q.eq(q.field("vehicleInfo.make"), filters.vehicleMake))
-      }
-
       // Filter by vehicle model
       if (filters.vehicleModel) {
         query = query.filter((q) => q.eq(q.field("vehicleInfo.model"), filters.vehicleModel))
