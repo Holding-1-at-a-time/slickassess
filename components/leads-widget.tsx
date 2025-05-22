@@ -148,29 +148,31 @@ export function LeadsWidget() {
           variant: "destructive",
         })
       }
-    } finally {
-      setBulkActionInProgress(false)
-      setIsConverting(false)
-      setShowConvertModal(false)
-    }
-  }
-
-  async function handleBulkDelete() {
-    if (selectedLeads.length === 0) {
-
-    try {
-      setBulkActionInProgress(true)
-      setIsDeleting(true)
-
-      const result = await bulkDeleteMutation({ leadIds: selectedLeads })
-
+    // Handle structured error from Convex
+    if (error && typeof error === "object" && "data" in error) {
+      const convexError = error.data
+      if (convexError && typeof convexError === "object" && "code" in convexError && convexError.code === "INVALID_LEADS") {
+        toast({
+          title: "Conversion Failed",
+          description: "Some leads cannot be converted. They may have been already converted or deleted.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Conversion Failed",
+          description: typeof convexError === "object" && "message" in convexError && typeof convexError.message === "string" 
+            ? convexError.message 
+            : "An error occurred during bulk conversion.",
+          variant: "destructive",
+        })
+      }
+    } else {
       toast({
-        title: "Leads Deleted",
-        description: `Successfully deleted ${result.success.length} leads.`,
-        variant: "default",
+        title: "Conversion Failed",
+        description: "An unexpected error occurred during bulk conversion.",
+        variant: "destructive",
       })
-
-      // Clear selection
+    }
       setSelectedLeads([])
     } catch (error) {
       console.error("Failed to bulk delete leads:", error)
