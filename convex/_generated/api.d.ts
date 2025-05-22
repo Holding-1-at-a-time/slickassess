@@ -23,7 +23,6 @@ import type * as billing from "../billing.js";
 import type * as calendarEvents from "../calendarEvents.js";
 import type * as calendarIntegration from "../calendarIntegration.js";
 import type * as clients from "../clients.js";
-import type * as config from "../config.js";
 import type * as images from "../images.js";
 import type * as notificationTemplates from "../notificationTemplates.js";
 import type * as notifications from "../notifications.js";
@@ -53,7 +52,6 @@ declare const fullApi: ApiFromModules<{
   calendarEvents: typeof calendarEvents;
   calendarIntegration: typeof calendarIntegration;
   clients: typeof clients;
-  config: typeof config;
   images: typeof images;
   notificationTemplates: typeof notificationTemplates;
   notifications: typeof notifications;
