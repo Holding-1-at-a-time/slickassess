@@ -13,7 +13,6 @@
 import { type Config } from "prettier";
 
 const config: Config = {
-    trailingComma: "none",
     "plugins": [
         "tailwindStylesheet: app/globals.css",
         "prettier-plugin-tailwindcss",
@@ -23,6 +22,4 @@ const config: Config = {
         config: "./tailwind.config.ts",
     },
 }
-};
-
 export default config;
