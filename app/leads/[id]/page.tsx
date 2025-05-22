@@ -68,27 +68,37 @@ function LeadDetailsPage() {
           )}
         </div>
 
-        {!lead.convertedToAssessment && (
-          <Button onClick={handleConvert} disabled={converting} className="bg-[#00ae98] text-white hover:bg-[#009a86]">
-            {converting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Converting...
-              </>
-            ) : (
-              <>
-                <Check className="mr-2 h-4 w-4" />
-                Convert to Assessment
-              </>
-            )}
-          </Button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Lead Information</CardTitle>
+        // Check if lead belongs to the current organization
+        if (lead) {
+          if (lead.tenantId !== organization?.id) {
+            return (
+              <div className="container mx-auto py-8">
+                <Card className="max-w-md mx-auto">
+                  <CardHeader>
+                    <CardTitle className="text-red-600 flex items-center">
+                      <AlertTriangle className="mr-2 h-5 w-5" />
+                      Access Denied
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p>You don't have permission to view this lead.</p>
+                    <Button variant="outline" className="mt-4" onClick={() => router.push("/leads")}>
+                      Back to Leads
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            )
+          }
+        } else if (!lead && organization?.id) {
+          return (
+            <div className="container mx-auto py-8">
+              <div className="flex justify-center items-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-[#00ae98]" />
+              </div>
+            </div>
+          )
+        }
             <CardDescription>
               Submitted on {formatDate(lead.createdAt, true)} ({getRelativeTimeString(lead.createdAt)})
             </CardDescription>
