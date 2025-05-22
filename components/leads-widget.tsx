@@ -84,42 +84,45 @@ export function LeadsWidget() {
           <Button variant="outline" size="sm" onClick={() => router.push(`/assessments/${assessmentId}`)}>
             View Assessment
           </Button>
-        ),
-      })
-
-      router.push(`/assessments/${assessmentId}`)
-    } catch (error) {
-      console.error("Failed to convert lead:", error)
-      toast({
-        title: "Conversion Failed",
-        description: error instanceof Error ? error.message : "Failed to convert lead. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setConverting(null)
-    }
-  }
-
-  async function handleBulkConvert() {
-    if (selectedLeads.length === 0) return
-
-    try {
-      setBulkActionInProgress(true)
-      setIsConverting(true)
-
-      const result = await bulkConvertMutation({ leadIds: selectedLeads })
-
-      toast({
-        title: "Bulk Conversion Complete",
-        description: `Successfully converted ${result.success.length} leads to assessments.`,
-        variant: "default",
-        action: (
-          <Button variant="outline" size="sm" onClick={() => router.push("/assessments")}>
-            View Assessments
-          </Button>
-        ),
-      })
-
+        async function handleConvert(leadId: Id<"leadAssessments">) {
+          if (!organization?.id) return
+  
+          try {
+            setConverting(leadId)
+            setError(null)
+            const assessmentId = await convertLeadMutation({
+              leadAssessmentId: leadId,
+              orgId: organization.id,
+            })
+    
+            toast({
+              title: "Lead Converted",
+              description: "Lead has been successfully converted to an assessment.",
+              variant: "default",
+              duration: 5000,
+              action: (
+                <Button variant="outline" size="sm" onClick={() => router.push(`/assessments/${assessmentId}`)}>
+                  View Assessment
+                </Button>
+              ),
+            })
+    
+            // Add a small delay to allow the user to see the toast notification
+            setTimeout(() => {
+              router.push(`/assessments/${assessmentId}`)
+            }, 1500)
+          } catch (error) {
+            console.error("Failed to convert lead:", error)
+            setError("Failed to convert lead. Please try again.")
+            toast({
+              title: "Conversion Failed",
+              description: error instanceof Error ? error.message : "Failed to convert lead. Please try again.",
+              variant: "destructive",
+            })
+          } finally {
+            setConverting(null)
+          }
+        }
       // Clear selection
       setSelectedLeads([])
     } catch (error) {
