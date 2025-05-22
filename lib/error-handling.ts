@@ -1,3 +1,15 @@
+/**
+    * @description      : 
+    * @author           : rrome
+    * @group            : 
+    * @created          : 22/05/2025 - 16:15:56
+    * 
+    * MODIFICATION LOG
+    * - Version         : 1.0.0
+    * - Date            : 22/05/2025
+    * - Author          : rrome
+    * - Modification    : 
+**/
 import { toast } from "@/components/ui/use-toast"
 
 // Error types for better categorization
@@ -117,18 +129,15 @@ function getErrorTitle(type: ErrorType): string {
 
 // Custom hook for try/catch patterns in React components
 export function useTryCatch() {
-  return async <T>(\
+  return async <T>(
     fn: () => Promise<T>,
-    options?: { silent?: boolean
-  logToServer?: boolean
-}
-,
-  )
-  : Promise<T | null> =>
-  try {
-    return await fn()
-  } catch (error) {
-    handleError(error, options)
-    return null
+    options?: { silent?: boolean; logToServer?: boolean }
+  ): Promise<T | null> => {
+    try {
+      return await fn()
+    } catch (error) {
+      handleError(error, options)
+      return null
+    }
   }
 }

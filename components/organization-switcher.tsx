@@ -1,3 +1,15 @@
+/**
+    * @description      : 
+    * @author           : rrome
+    * @group            : 
+    * @created          : 22/05/2025 - 16:23:51
+    * 
+    * MODIFICATION LOG
+    * - Version         : 1.0.0
+    * - Date            : 22/05/2025
+    * - Author          : rrome
+    * - Modification    : 
+**/
 "use client"
 
 import { useState, useEffect } from "react"
@@ -20,8 +32,7 @@ import { CassetteLoader } from "./cassette-loader"
 export function OrganizationSwitcher() {
   const router = useRouter()
   const { organization } = useOrganization()
-  const { organizationList, setActive, isLoaded } = useOrganizationList()
-  const [isLoading, setIsLoading] = useState(false)
+  const { data: organizationList, setActive, isLoaded } = useOrganizationList()  const [isLoading, setIsLoading] = useState(false)
   const [isSwitching, setIsSwitching] = useState<string | null>(null)
 
   // Redirect to create org page if no orgs exist
@@ -86,7 +97,7 @@ export function OrganizationSwitcher() {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="text-[#00ae98]">Organizations</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {organizationList.map((org) => (
+        {organizationList.map((org: { id: string; name: string; imageUrl?: string }) => (
           <DropdownMenuItem
             key={org.id}
             className={
