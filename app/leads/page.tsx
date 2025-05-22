@@ -88,10 +88,30 @@ function LeadsPage() {
   async function handleBulkDelete() {
     if (selectedLeads.length === 0) return
 
-    // Confirm deletion
-    if (!confirm(`Are you sure you want to delete ${selectedLeads.length} leads? This action cannot be undone.`)) {
-      return
-    }
+    // Use a custom confirmation dialog instead of native confirm
+    const { openDialog, DialogComponent } = useConfirmationDialog({
+      title: "Confirm Deletion",
+      description: `Are you sure you want to delete ${selectedLeads.length} leads? This action cannot be undone.`,
+      onConfirm: async () => {
+        try {
+          const result = await bulkDeleteMutation({ leadIds: selectedLeads })
+          if (result.success.length > 0) {
+            leadToast.showBulkDeletionSuccess(result.success.length)
+            setSelectedLeads([])
+          }
+          if (result.failed.length > 0) {
+            leadToast.showActionError("Bulk Deletion", new Error(`Failed to delete ${result.failed.length} leads`))
+          }
+        } catch (error) {
+          console.error("Failed to bulk delete leads:", error)
+          leadToast.showActionError("Bulk Deletion", error as Error)
+        }
+      }
+    });
+
+    // Open the dialog instead of using confirm
+    openDialog();
+    return;
 
     try {
       const result = await bulkDeleteMutation({ leadIds: selectedLeads })
