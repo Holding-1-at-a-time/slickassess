@@ -4,6 +4,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import ConvexClientProvider from "@/components/convex-client-provider"
+import { getServerTheme, getThemeClasses } from "@/lib/theme"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -18,12 +19,25 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const theme = getServerTheme()
+  const themeClasses = getThemeClasses(theme)
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={themeClasses}
+      style={{ colorScheme: getThemeClasses(theme) === "dark" ? "dark" : "light" }}
+    >
       <body className={inter.className}>
         <ClerkProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY!}>
           <ConvexClientProvider>
-            <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme={theme}
+              enableSystem
+              disableTransitionOnChange
+              storageKey="theme"
+            >
               {children}
             </ThemeProvider>
           </ConvexClientProvider>
