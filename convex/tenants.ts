@@ -3,7 +3,7 @@ import { v } from "convex/values"
 import { nanoid } from "nanoid"
 import { ConvexError } from "convex/values"
 import { requireAuth } from "./utils/auth"
-import QRCode from "qrcode"
+import { api } from "./_generated/api"
 
 // Helper function to safely get app URL with fallback
 function getAppUrl(): string {
@@ -12,6 +12,13 @@ function getAppUrl(): string {
     throw new ConvexError("NEXT_PUBLIC_APP_URL environment variable is not set")
   }
   return appUrl
+}
+
+// Helper function to construct a valid URL
+function constructPublicUrl(baseUrl: string, qrSlug: string): string {
+  // Ensure baseUrl doesn't have trailing slash
+  const base = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl
+  return `${base}/scan/${qrSlug}`
 }
 
 // Create a new tenant
@@ -44,15 +51,18 @@ export const create = mutation({
     const qrSlug = nanoid(10)
 
     // Generate the public URL
-    const publicUrl = `${getAppUrl()}/scan/${qrSlug}`
+    const publicUrl = constructPublicUrl(getAppUrl(), qrSlug)
 
-    // Generate QR code as data URL
-    const qrCodeUrl = await QRCode.toDataURL(publicUrl, {
-      width: 512,
-      margin: 1,
-      color: {
-        dark: "#00AE98",
-        light: "#FFFFFF",
+    // Generate QR code using the action
+    const qrCodeUrl = await ctx.runAction(api.actions.generateQrCode, {
+      url: publicUrl,
+      options: {
+        width: 512,
+        margin: 1,
+        color: {
+          dark: "#00AE98",
+          light: "#FFFFFF",
+        },
       },
     })
 
@@ -138,15 +148,18 @@ export const regenerateQrCode = mutation({
     const qrSlug = nanoid(10)
 
     // Generate the public URL
-    const publicUrl = `${getAppUrl()}/scan/${qrSlug}`
+    const publicUrl = constructPublicUrl(getAppUrl(), qrSlug)
 
-    // Generate QR code as data URL
-    const qrCodeUrl = await QRCode.toDataURL(publicUrl, {
-      width: 512,
-      margin: 1,
-      color: {
-        dark: "#00AE98",
-        light: "#FFFFFF",
+    // Generate QR code using the action
+    const qrCodeUrl = await ctx.runAction(api.actions.generateQrCode, {
+      url: publicUrl,
+      options: {
+        width: 512,
+        margin: 1,
+        color: {
+          dark: "#00AE98",
+          light: "#FFFFFF",
+        },
       },
     })
 

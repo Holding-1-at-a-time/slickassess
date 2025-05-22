@@ -53,27 +53,53 @@ export const create = mutation({
       throw new ConvexError("Invalid tenant configuration")
     }
 
-    // Check if client already exists by email
-    let clientId: Id<"clients"> | null = null
-    const existingClients = await ctx.db
+    // Use atomic upsert pattern for client creation to avoid race conditions
+    let clientId: Id<"clients">
+
+    // First try to find the client
+    const existingClient = await ctx.db
       .query("clients")
       .withIndex("by_orgId_and_email", (q) => q.eq("orgId", tenant.orgId).eq("email", args.clientInfo.email))
-      .collect()
+      .first()
 
-    if (existingClients.length > 0) {
-      clientId = existingClients[0]._id
+    if (existingClient) {
+      // Use existing client
+      clientId = existingClient._id
+
+      // Update client info if needed
+      if (existingClient.name !== args.clientInfo.name || existingClient.phone !== args.clientInfo.phone) {
+        await ctx.db.patch(clientId, {
+          name: args.clientInfo.name,
+          phone: args.clientInfo.phone,
+          updatedAt: now,
+        })
+      }
     } else {
-      // Create new client
-      clientId = await ctx.db.insert("clients", {
-        name: args.clientInfo.name,
-        email: args.clientInfo.email,
-        phone: args.clientInfo.phone,
-        status: "active",
-        orgId: tenant.orgId,
-        clerkId: "public-submission", // Special marker for public submissions
-        createdAt: now,
-        updatedAt: now,
-      })
+      // Create new client with retry logic for potential race conditions
+      try {
+        clientId = await ctx.db.insert("clients", {
+          name: args.clientInfo.name,
+          email: args.clientInfo.email,
+          phone: args.clientInfo.phone,
+          status: "active",
+          orgId: tenant.orgId,
+          clerkId: "public-submission", // Special marker for public submissions
+          createdAt: now,
+          updatedAt: now,
+        })
+      } catch (error) {
+        // If insert fails due to a unique constraint, try to fetch again
+        const retryClient = await ctx.db
+          .query("clients")
+          .withIndex("by_orgId_and_email", (q) => q.eq("orgId", tenant.orgId).eq("email", args.clientInfo.email))
+          .first()
+
+        if (!retryClient) {
+          throw new ConvexError("Failed to create or retrieve client")
+        }
+
+        clientId = retryClient._id
+      }
     }
 
     // Create vehicle

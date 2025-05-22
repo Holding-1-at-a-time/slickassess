@@ -90,6 +90,7 @@ export default function QrCodePage() {
     )
   }
 
+  // Properly construct the public URL using template literals
   const publicUrl = `${appUrl}/scan/${tenant.activeQrSlug}`
 
   return (

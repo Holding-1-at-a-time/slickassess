@@ -32,7 +32,7 @@ export default defineSchema({
   })
     .index("by_orgId", ["orgId"]) // Primary index for data isolation
     .index("by_orgId_and_name", ["orgId", "name"]) // For searching by name within org
-    .index("by_orgId_and_email", ["orgId", "email"]), // For finding clients by email
+    .index("by_orgId_and_email", ["orgId", "email"], { unique: true }), // Unique index to prevent duplicates
 
   // Vehicles table
   vehicles: defineTable({
@@ -408,7 +408,14 @@ export default defineSchema({
   tenants: defineTable({
     name: v.string(),
     orgId: v.string(), // Clerk organization ID
-    qrSlug: v.string(), // Unique slug for QR code
+    qrSlugs: v.array(
+      v.object({
+        slug: v.string(),
+        active: v.boolean(),
+        createdAt: v.number(),
+      }),
+    ),
+    activeQrSlug: v.string(), // Current active QR slug
     qrCodeUrl: v.optional(v.string()), // Data URL of the QR code
     branding: v.optional(
       v.object({
@@ -421,5 +428,16 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_orgId", ["orgId"])
-    .index("by_qrSlug", ["qrSlug"]),
+    .index("by_activeQrSlug", ["activeQrSlug"]),
+
+  // Rate limiting table
+  rateLimits: defineTable({
+    identifier: v.string(), // IP address or other identifier
+    action: v.string(), // The action being rate limited (e.g., "publicAssessment", "imageUpload")
+    count: v.number(), // Number of requests in the current window
+    windowStart: v.number(), // Start timestamp of the current window
+    expiresAt: v.number(), // When this record should be cleaned up
+  })
+    .index("by_identifier_and_action", ["identifier", "action"])
+    .index("by_expiresAt", ["expiresAt"]), // For cleanup
 })
