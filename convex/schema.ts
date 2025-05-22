@@ -2,230 +2,302 @@ import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
 export default defineSchema({
-  // Users table (for additional user data beyond what Clerk provides)
+  // Existing tables...
   users: defineTable({
     clerkId: v.string(),
     email: v.string(),
-    name: v.optional(v.string()),
-    imageUrl: v.optional(v.string()),
-    preferences: v.optional(v.object({})),
-    // No orgId here because users can belong to multiple organizations
-  })
-    .index("by_clerkId", ["clerkId"])
-    .index("by_email", ["email"]),
-
-  // Clients table
-  clients: defineTable({
     name: v.string(),
-    email: v.optional(v.string()),
-    phone: v.optional(v.string()),
-    address: v.optional(v.string()),
-    city: v.optional(v.string()),
-    state: v.optional(v.string()),
-    zipCode: v.optional(v.string()),
-    notes: v.optional(v.string()),
-    status: v.string(), // "active", "inactive"
-    orgId: v.string(), // Clerk organization ID - CRITICAL for data isolation
-    clerkId: v.string(), // Clerk user ID who created this
-    createdAt: v.number(), // Timestamp
-    updatedAt: v.number(), // Timestamp
-  })
-    .index("by_orgId", ["orgId"]) // Primary index for data isolation
-    .index("by_orgId_and_name", ["orgId", "name"]) // For searching by name within org
-    .index("by_orgId_and_email", ["orgId", "email"], { unique: true }), // Unique index to prevent duplicates
+    imageUrl: v.optional(v.string()),
+    role: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_clerkId", ["clerkId"]),
 
-  // Vehicles table
+  organizations: defineTable({
+    clerkId: v.string(),
+    name: v.string(),
+    slug: v.string(),
+    imageUrl: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_clerkId", ["clerkId"]),
+
+  tenants: defineTable({
+    orgId: v.string(),
+    name: v.string(),
+    slug: v.string(),
+    qrSlug: v.string(),
+    description: v.optional(v.string()),
+    settings: v.optional(v.object({})),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_qrSlug", ["qrSlug"]),
+
+  clients: defineTable({
+    orgId: v.string(),
+    name: v.string(),
+    email: v.string(),
+    phone: v.string(),
+    address: v.string(),
+    city: v.string(),
+    state: v.string(),
+    zipCode: v.string(),
+    notes: v.string(),
+    status: v.string(),
+    createdBy: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_and_email", ["orgId", "email"]),
+
   vehicles: defineTable({
+    orgId: v.string(),
+    clerkId: v.string(),
     clientId: v.id("clients"),
     vin: v.string(),
     make: v.string(),
     model: v.string(),
     year: v.number(),
-    color: v.optional(v.string()),
-    licensePlate: v.optional(v.string()),
-    mileage: v.optional(v.number()),
-    exteriorCondition: v.optional(v.string()),
-    interiorCondition: v.optional(v.string()),
-    notes: v.optional(v.string()),
-    features: v.optional(v.array(v.string())),
-    mainImageId: v.optional(v.id("vehicleImages")),
-    lastAssessmentId: v.optional(v.id("assessments")),
-    lastAssessmentAt: v.optional(v.number()),
-    orgId: v.string(), // Clerk organization ID - CRITICAL for data isolation
-    clerkId: v.string(), // Clerk user ID who created this
-    createdAt: v.number(), // Timestamp
-    updatedAt: v.number(), // Timestamp
+    color: v.string(),
+    licensePlate: v.string(),
+    mileage: v.number(),
+    exteriorCondition: v.string(),
+    interiorCondition: v.string(),
+    notes: v.string(),
+    features: v.array(v.string()),
+    mainImageId: v.union(v.id("vehicleImages"), v.null()),
+    lastAssessmentId: v.union(v.id("assessments"), v.null()),
+    lastAssessmentAt: v.union(v.number(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"]) // Primary index for data isolation
-    .index("by_clientId", ["clientId"]) // For filtering by client
-    .index("by_orgId_and_make", ["orgId", "make"]), // For searching by make within org
+    .index("by_orgId", ["orgId"])
+    .index("by_clientId", ["clientId"]),
 
-  // Vehicle Images table
   vehicleImages: defineTable({
+    orgId: v.string(),
+    clerkId: v.string(),
     vehicleId: v.id("vehicles"),
     url: v.string(),
-    category: v.string(), // "exterior", "interior", "damage", etc.
-    position: v.optional(v.string()), // "front", "rear", "side", etc.
-    tags: v.optional(v.array(v.string())),
+    category: v.string(),
     isPrimary: v.boolean(),
-    orgId: v.string(), // Clerk organization ID - CRITICAL for data isolation
-    clerkId: v.string(), // Clerk user ID who created this
-    createdAt: v.number(), // Timestamp
-  })
-    .index("by_orgId", ["orgId"]) // Primary index for data isolation
-    .index("by_vehicleId", ["vehicleId"]), // For filtering by vehicle
+    createdAt: v.number(),
+  }).index("by_vehicleId", ["vehicleId"]),
 
-  // Assessments table
   assessments: defineTable({
+    orgId: v.string(),
     vehicleId: v.id("vehicles"),
+    clientId: v.id("clients"),
+    assessmentNumber: v.string(),
+    status: v.string(),
+    assessmentDate: v.number(),
+    mileage: v.number(),
+    notes: v.string(),
+    sections: v.array(
+      v.object({
+        id: v.string(),
+        name: v.string(),
+        condition: v.union(v.string(), v.null()),
+        notes: v.union(v.string(), v.null()),
+        imageIds: v.array(v.string()),
+      }),
+    ),
+    identifiedIssues: v.array(
+      v.object({
+        section: v.string(),
+        severity: v.string(),
+        description: v.string(),
+        aiDetected: v.optional(v.boolean()),
+      }),
+    ),
+    recommendedServices: v.array(
+      v.object({
+        name: v.string(),
+        description: v.string(),
+        priority: v.string(),
+      }),
+    ),
+    overallCondition: v.string(),
+    aiSummary: v.string(),
+    completedAt: v.optional(v.number()),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_vehicleId", ["vehicleId"])
+    .index("by_clientId", ["clientId"]),
+
+  notifications: defineTable({
+    userId: v.union(v.string(), v.null()),
+    orgId: v.string(),
+    type: v.string(),
+    title: v.string(),
+    message: v.string(),
+    link: v.optional(v.string()),
+    read: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_orgId", ["orgId"]),
+
+  auditLogs: defineTable({
+    orgId: v.string(),
+    clerkId: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    action: v.string(),
+    resourceType: v.string(),
+    resourceId: v.string(),
+    details: v.optional(v.object({})),
+    createdAt: v.number(),
+  }).index("by_orgId", ["orgId"]),
+
+  settings: defineTable({
+    orgId: v.string(),
+    theme: v.optional(v.string()),
+    notificationPreferences: v.optional(v.object({})),
+    customFields: v.optional(v.array(v.object({}))),
+  }).index("by_orgId", ["orgId"]),
+
+  calendarIntegrations: defineTable({
+    orgId: v.string(),
+    clerkId: v.string(),
+    provider: v.string(),
+    accessToken: v.string(),
+    refreshToken: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    calendarId: v.optional(v.string()),
+    syncEnabled: v.boolean(),
+    lastSyncAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_clerkId", ["clerkId"]),
+
+  calendarEvents: defineTable({
+    orgId: v.string(),
+    clerkId: v.string(),
+    externalId: v.optional(v.string()),
     title: v.string(),
     description: v.optional(v.string()),
-    status: v.string(), // "pending", "in_progress", "completed", etc.
-    assignedTo: v.optional(v.string()), // Clerk user ID
-    dueDate: v.optional(v.number()), // Timestamp
-    completedAt: v.optional(v.number()), // Timestamp
-    findings: v.optional(v.array(v.object({}))),
-    recommendations: v.optional(v.array(v.string())),
-    orgId: v.string(), // Clerk organization ID - CRITICAL for data isolation
-    clerkId: v.string(), // Clerk user ID who created this
-    createdAt: v.number(), // Timestamp
-    updatedAt: v.number(), // Timestamp
-    // New fields for assessment structure
-    assessmentNumber: v.optional(v.string()),
+    startTime: v.number(),
+    endTime: v.number(),
+    location: v.optional(v.string()),
+    attendees: v.array(v.string()),
+    vehicleId: v.optional(v.id("vehicles")),
     clientId: v.optional(v.id("clients")),
-    assessmentDate: v.optional(v.number()),
-    mileage: v.optional(v.number()),
-    notes: v.optional(v.string()),
-    sections: v.optional(
-      v.array(
-        v.object({
-          id: v.string(),
-          name: v.string(),
-          condition: v.union(v.string(), v.null()),
-          notes: v.union(v.string(), v.null()),
-          imageIds: v.array(v.string()),
-        }),
-      ),
-    ),
-    identifiedIssues: v.optional(
-      v.array(
-        v.object({
-          section: v.string(),
-          severity: v.string(),
-          description: v.string(),
-          imageIds: v.optional(v.array(v.string())),
-          aiDetected: v.optional(v.boolean()),
-        }),
-      ),
-    ),
-    recommendedServices: v.optional(
-      v.array(
-        v.object({
-          name: v.string(),
-          description: v.string(),
-          priority: v.string(),
-        }),
-      ),
-    ),
-    overallCondition: v.optional(v.string()),
-    aiSummary: v.optional(v.string()),
-    createdBy: v.optional(v.string()),
+    assessmentId: v.optional(v.id("assessments")),
+    status: v.string(),
+    reminderSent: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"]) // Primary index for data isolation
-    .index("by_vehicleId", ["vehicleId"]) // For filtering by vehicle
-    .index("by_assignedTo", ["assignedTo"]) // For filtering by assignee
-    .index("by_orgId_and_status", ["orgId", "status"]), // For filtering by status within org
+    .index("by_orgId", ["orgId"])
+    .index("by_clerkId", ["clerkId"])
+    .index("by_startTime", ["startTime"]),
 
-  // Lead Assessments table (from QR code submissions)
-  leadAssessments: defineTable({
-    tenantId: v.id("tenants"), // Tenant/organization ID
-    customerInfo: v.object({
-      name: v.string(),
-      email: v.string(),
-      phone: v.string(),
-    }),
+  eventReminders: defineTable({
+    orgId: v.string(),
+    eventId: v.id("calendarEvents"),
+    reminderType: v.string(),
+    reminderTime: v.number(),
+    sent: v.boolean(),
+    sentAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_eventId", ["eventId"])
+    .index("by_reminderTime", ["reminderTime"]),
+
+  userReminderPreferences: defineTable({
+    orgId: v.string(),
+    clerkId: v.string(),
+    emailReminders: v.boolean(),
+    smsReminders: v.boolean(),
+    reminderTimes: v.array(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_clerkId", ["clerkId"]),
+
+  leads: defineTable({
+    orgId: v.string(),
+    source: v.string(),
+    customerName: v.string(),
+    customerEmail: v.string(),
+    customerPhone: v.string(),
     vehicleInfo: v.object({
       make: v.string(),
       model: v.string(),
       year: v.number(),
       color: v.string(),
     }),
+    serviceRequested: v.string(),
     description: v.string(),
-    hasScratches: v.optional(v.boolean()),
-    hasDents: v.optional(v.boolean()),
-    needsDetailing: v.optional(v.boolean()),
-    imageIds: v.array(v.string()),
-    convertedToAssessment: v.optional(v.id("assessments")),
+    status: v.string(),
+    priority: v.string(),
+    assignedTo: v.optional(v.string()),
+    followUpDate: v.optional(v.number()),
+    convertedToClient: v.boolean(),
+    clientId: v.optional(v.id("clients")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_tenantId", ["tenantId"])
-    .index("by_tenantId_and_convertedToAssessment", ["tenantId", "convertedToAssessment"]),
-
-  // Audit logs table
-  auditLogs: defineTable({
-    orgId: v.string(),
-    clerkId: v.string(),
-    action: v.string(), // "createVehicle", "updateClient", etc.
-    resourceType: v.string(), // "vehicle", "client", "assessment", etc.
-    resourceId: v.string(), // ID of the resource
-    details: v.optional(v.string()), // Additional details
-    createdAt: v.number(), // Timestamp
-  })
     .index("by_orgId", ["orgId"])
-    .index("by_resourceType_and_resourceId", ["resourceType", "resourceId"])
-    .index("by_orgId_and_createdAt", ["orgId", "createdAt"]),
+    .index("by_status", ["status"])
+    .index("by_assignedTo", ["assignedTo"]),
 
-  // Image annotations table
-  imageAnnotations: defineTable({
+  reports: defineTable({
+    orgId: v.string(),
+    type: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    parameters: v.object({}),
+    data: v.object({}),
+    generatedBy: v.string(),
+    generatedAt: v.number(),
+    format: v.string(),
+    fileUrl: v.optional(v.string()),
+  }).index("by_orgId", ["orgId"]),
+
+  annotations: defineTable({
+    orgId: v.string(),
     imageId: v.id("vehicleImages"),
     vehicleId: v.id("vehicles"),
     assessmentId: v.optional(v.id("assessments")),
     annotations: v.array(
       v.object({
         id: v.string(),
-        type: v.string(), // "pin", "rectangle", "circle", "arrow", "text"
+        type: v.string(),
         x: v.number(),
         y: v.number(),
         width: v.optional(v.number()),
         height: v.optional(v.number()),
         radius: v.optional(v.number()),
         color: v.string(),
-        text: v.optional(v.string()),
-        severity: v.optional(v.string()), // "minor", "moderate", "severe"
-        category: v.optional(v.string()), // "scratch", "dent", "rust", etc.
-        confidence: v.optional(v.number()), // AI confidence score
+        text: v.string(),
+        severity: v.optional(v.string()),
+        category: v.optional(v.string()),
+        location: v.optional(v.string()),
+        repairComplexity: v.optional(v.string()),
+        recommendation: v.optional(v.string()),
       }),
     ),
-    orgId: v.string(), // For multi-tenant isolation
-    createdBy: v.string(),
+    analysisType: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_imageId", ["imageId"])
     .index("by_vehicleId", ["vehicleId"])
-    .index("by_assessmentId", ["assessmentId"])
-    .index("by_orgId", ["orgId"]),
+    .index("by_assessmentId", ["assessmentId"]),
 
-  // Reports table
-  reports: defineTable({
-    assessmentId: v.id("assessments"),
-    vehicleId: v.id("vehicles"),
-    clientId: v.id("clients"),
-    reportUrl: v.string(), // URL to the generated report
-    reportType: v.string(), // "damage", "assessment", etc.
-    orgId: v.string(), // For multi-tenant isolation
-    clerkId: v.string(), // User who generated the report
-    createdAt: v.number(),
-  })
-    .index("by_assessmentId", ["assessmentId"])
-    .index("by_vehicleId", ["vehicleId"])
-    .index("by_clientId", ["clientId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_and_createdAt", ["orgId", "createdAt"]),
-
-  // AI Feedback table for training
   aiFeedback: defineTable({
+    orgId: v.string(),
+    clerkId: v.string(),
     imageId: v.id("vehicleImages"),
     assessmentId: v.optional(v.id("assessments")),
     originalPredictions: v.array(
@@ -256,201 +328,152 @@ export default defineSchema({
         severity: v.string(),
       }),
     ),
-    feedbackType: v.string(), // "correction", "confirmation", "rejection"
+    feedbackType: v.string(),
     feedbackNotes: v.optional(v.string()),
-    orgId: v.string(), // For multi-tenant isolation
-    clerkId: v.string(), // User who provided the feedback
     createdAt: v.number(),
-  })
-    .index("by_imageId", ["imageId"])
-    .index("by_assessmentId", ["assessmentId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_createdAt", ["createdAt"]),
+  }).index("by_orgId", ["orgId"]),
 
-  // AI Analysis Results table
   aiAnalysisResults: defineTable({
+    orgId: v.string(),
     imageId: v.id("vehicleImages"),
     vehicleId: v.id("vehicles"),
     assessmentId: v.optional(v.id("assessments")),
-    analysisType: v.string(), // "exterior", "interior"
-    results: v.any(), // Full analysis results
-    orgId: v.string(), // For multi-tenant isolation
+    analysisType: v.string(),
+    results: v.any(),
     createdBy: v.string(),
     createdAt: v.number(),
   })
     .index("by_imageId", ["imageId"])
     .index("by_vehicleId", ["vehicleId"])
-    .index("by_assessmentId", ["assessmentId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_analysisType", ["analysisType"]),
+    .index("by_assessmentId", ["assessmentId"]),
 
-  // AI Model Versions table
   aiModelVersions: defineTable({
-    modelName: v.string(), // "damage-detection", "severity-estimation", etc.
-    version: v.string(), // Semantic versioning
-    trainingDataCount: v.number(), // Number of samples used for training
-    accuracy: v.number(), // Model accuracy metrics
-    isActive: v.boolean(), // Whether this is the currently active model
-    deployedAt: v.optional(v.number()), // When the model was deployed
+    modelName: v.string(),
+    version: v.string(),
+    trainingDataCount: v.number(),
+    accuracy: v.number(),
+    isActive: v.boolean(),
+    deployedAt: v.optional(v.number()),
     createdAt: v.number(),
-  })
-    .index("by_modelName_and_version", ["modelName", "version"])
-    .index("by_modelName_and_isActive", ["modelName", "isActive"]),
+  }).index("by_modelName_and_isActive", ["modelName", "isActive"]),
 
-  // User Client Preferences table
-  userClientPreferences: defineTable({
-    clientId: v.string(),
-    orgId: v.string(), // For multi-tenant isolation
-    preferredDays: v.array(v.string()),
-    preferredTimeOfDay: v.string(), // "morning", "afternoon", "evening"
-    preferredStaffId: v.string(),
-    communicationPreference: v.string(), // "email", "sms", "none"
-    reminderTiming: v.number(), // Hours before appointment
-    createdAt: v.number(),
-    createdBy: v.string(),
-    updatedAt: v.number(),
-    updatedBy: v.string(),
-  })
-    .index("by_clientId_orgId", ["clientId", "orgId"])
-    .index("by_orgId", ["orgId"]),
-
-  // Notification Templates table
-  notificationTemplates: defineTable({
+  // New pricing tables
+  pricingConfigurations: defineTable({
+    tenantId: v.id("tenants"),
     orgId: v.string(),
-    type: v.string(), // "appointmentReminder", "appointmentConfirmation", etc.
-    channel: v.string(), // "email", "sms"
-    subject: v.string(),
-    body: v.string(),
-    active: v.boolean(),
-    createdAt: v.number(),
+    basePrices: v.object({
+      exteriorWash: v.number(),
+      interiorCleaning: v.number(),
+      waxing: v.number(),
+      detailing: v.number(),
+      paintCorrection: v.number(),
+      ceramicCoating: v.number(),
+      engineCleaning: v.number(),
+      headlightRestoration: v.number(),
+      scratchRepair: v.number(),
+      dentRepair: v.number(),
+    }),
+    laborRate: v.number(),
+    markupPercentage: v.number(),
+    minimumCharge: v.number(),
+    rushOrderMultiplier: v.number(),
+    discountThresholds: v.object({
+      volume: v.object({
+        threshold: v.number(),
+        discount: v.number(),
+      }),
+      loyalty: v.object({
+        threshold: v.number(),
+        discount: v.number(),
+      }),
+    }),
     createdBy: v.string(),
-    updatedAt: v.number(),
-    updatedBy: v.string(),
-  })
-    .index("by_orgId_type_channel", ["orgId", "type", "channel"])
-    .index("by_orgId", ["orgId"]),
-
-  // Calendar Integrations table
-  calendarIntegrations: defineTable({
-    userId: v.id("users"),
-    orgId: v.string(), // For multi-tenant isolation
-    provider: v.string(), // "google", "outlook", etc.
-    accessToken: v.string(),
-    refreshToken: v.string(),
-    tokenExpiry: v.number(),
-    calendarId: v.string(),
-    syncEnabled: v.boolean(),
-    lastSynced: v.optional(v.number()),
     createdAt: v.number(),
+    updatedBy: v.string(),
     updatedAt: v.number(),
   })
-    .index("by_user_and_provider", ["userId", "provider"])
+    .index("by_tenantId", ["tenantId"])
     .index("by_orgId", ["orgId"]),
 
-  // Calendar Events table
-  calendarEvents: defineTable({
-    integrationId: v.id("calendarIntegrations"),
-    externalId: v.string(), // ID from the external calendar provider
-    title: v.string(),
-    description: v.optional(v.string()),
-    startTime: v.number(),
-    endTime: v.number(),
-    location: v.optional(v.string()),
-    attendees: v.optional(v.array(v.string())),
+  pricingEstimates: defineTable({
+    tenantId: v.id("tenants"),
+    vehicleId: v.id("vehicles"),
     assessmentId: v.optional(v.id("assessments")),
-    vehicleId: v.optional(v.id("vehicles")),
     clientId: v.optional(v.id("clients")),
-    reminders: v.optional(
-      v.array(
-        v.object({
-          id: v.string(),
-          method: v.string(), // "email", "popup", "sms"
-          minutes: v.number(), // Minutes before the event
-          sent: v.optional(v.boolean()),
-          sentAt: v.optional(v.number()),
-        }),
-      ),
-    ),
-    defaultRemindersEnabled: v.optional(v.boolean()),
-    orgId: v.string(), // For multi-tenant isolation
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_integrationId", ["integrationId"])
-    .index("by_externalId", ["externalId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_startTime", ["startTime"])
-    .index("by_assessmentId", ["assessmentId"])
-    .index("by_vehicleId", ["vehicleId"])
-    .index("by_clientId", ["clientId"]),
-
-  // Event Reminders table (for tracking reminder status)
-  eventReminders: defineTable({
-    eventId: v.id("calendarEvents"),
-    reminderId: v.string(), // Matches the id in the reminders array
-    method: v.string(), // "email", "popup", "sms"
-    minutes: v.number(),
-    scheduledTime: v.number(), // When the reminder should be sent
-    sent: v.boolean(),
-    sentAt: v.optional(v.number()),
-    recipientEmail: v.optional(v.string()),
-    recipientPhone: v.optional(v.string()),
-    orgId: v.string(), // For multi-tenant isolation
-    createdAt: v.number(),
-  })
-    .index("by_eventId", ["eventId"])
-    .index("by_scheduledTime", ["scheduledTime"])
-    .index("by_sent_scheduledTime", ["sent", "scheduledTime"])
-    .index("by_orgId", ["orgId"]),
-
-  // User Reminder Preferences table
-  userReminderPreferences: defineTable({
-    userId: v.id("users"),
     orgId: v.string(),
-    defaultReminders: v.array(
+    requestedServices: v.array(v.string()),
+    vehicleSize: v.string(),
+    estimatedDuration: v.string(),
+    filthiness: v.string(),
+    damageSeverity: v.string(),
+    isRushOrder: v.boolean(),
+    serviceBreakdown: v.array(
       v.object({
-        method: v.string(), // "email", "popup", "sms"
-        minutes: v.number(),
+        service: v.string(),
+        basePrice: v.number(),
+        adjustedPrice: v.number(),
+        multipliers: v.object({
+          vehicleSize: v.number(),
+          damage: v.number(),
+          filthiness: v.number(),
+          duration: v.number(),
+          serviceSpecific: v.number(),
+          total: v.number(),
+        }),
       }),
     ),
-    emailEnabled: v.boolean(),
-    smsEnabled: v.boolean(),
-    popupEnabled: v.boolean(),
+    baseTotal: v.number(),
+    subtotal: v.number(),
+    discountAmount: v.number(),
+    discountType: v.string(),
+    finalTotal: v.number(),
+    estimatedHours: v.number(),
+    laborCost: v.number(),
+    status: v.string(), // draft, approved, rejected, converted
+    approvedBy: v.optional(v.string()),
+    approvedAt: v.optional(v.number()),
+    createdBy: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_tenantId", ["tenantId"])
+    .index("by_vehicleId", ["vehicleId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_orgId", ["orgId"]),
+
+  serviceOrders: defineTable({
+    estimateId: v.id("pricingEstimates"),
+    tenantId: v.id("tenants"),
+    vehicleId: v.id("vehicles"),
+    clientId: v.id("clients"),
+    orgId: v.string(),
+    orderNumber: v.string(),
+    services: v.array(v.string()),
+    totalAmount: v.number(),
+    status: v.string(), // pending, in_progress, completed, cancelled
+    scheduledDate: v.optional(v.number()),
+    completedDate: v.optional(v.number()),
+    assignedTechnicians: v.array(v.string()),
+    notes: v.optional(v.string()),
+    beforeImages: v.array(v.string()),
+    afterImages: v.array(v.string()),
+    customerSignature: v.optional(v.string()),
+    paymentStatus: v.string(), // pending, paid, refunded
+    createdBy: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_userId", ["userId"])
-    .index("by_orgId", ["orgId"]),
-
-  // Notifications table (for in-app notifications)
-  notifications: defineTable({
-    userId: v.id("users"),
-    orgId: v.string(),
-    type: v.string(), // "reminder", "mention", "assignment", etc.
-    title: v.string(),
-    message: v.string(),
-    link: v.optional(v.string()), // Optional link to navigate to
-    read: v.boolean(),
-    createdAt: v.number(),
-  })
-    .index("by_userId", ["userId"])
-    .index("by_userId_and_read", ["userId", "read"])
-    .index("by_orgId", ["orgId"]),
+    .index("by_tenantId", ["tenantId"])
+    .index("by_vehicleId", ["vehicleId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_status", ["status"]),
 
   // Billing tables
-  billingCustomers: defineTable({
-    orgId: v.string(),
-    stripeCustomerId: v.string(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_orgId", ["orgId"])
-    .index("by_stripeCustomerId", ["stripeCustomerId"]),
-
   subscriptions: defineTable({
     orgId: v.string(),
+    stripeCustomerId: v.string(),
     stripeSubscriptionId: v.string(),
-    status: v.string(), // 'active', 'canceled', 'past_due', etc.
+    status: v.string(),
     planId: v.string(),
     currentPeriodStart: v.number(),
     currentPeriodEnd: v.number(),
@@ -459,124 +482,35 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_orgId", ["orgId"])
+    .index("by_stripeCustomerId", ["stripeCustomerId"])
     .index("by_stripeSubscriptionId", ["stripeSubscriptionId"]),
 
   invoices: defineTable({
     orgId: v.string(),
     stripeInvoiceId: v.string(),
-    stripeCustomerId: v.string(),
+    subscriptionId: v.optional(v.id("subscriptions")),
     amount: v.number(),
-    status: v.string(), // 'paid', 'open', 'void', etc.
-    invoiceUrl: v.optional(v.string()),
-    invoicePdf: v.optional(v.string()),
-    createdAt: v.number(),
+    currency: v.string(),
+    status: v.string(),
     paidAt: v.optional(v.number()),
+    dueDate: v.number(),
+    invoiceUrl: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
   })
     .index("by_orgId", ["orgId"])
     .index("by_stripeInvoiceId", ["stripeInvoiceId"])
-    .index("by_orgId_createdAt", ["orgId", "createdAt"]),
+    .index("by_subscriptionId", ["subscriptionId"]),
 
-  // Analytics events table
-  analyticsEvents: defineTable({
+  usageRecords: defineTable({
     orgId: v.string(),
-    eventType: v.string(), // 'appointment_created', 'assessment_completed', etc.
-    eventData: v.object({}), // Flexible schema for different event types
-    userId: v.optional(v.string()),
+    subscriptionId: v.id("subscriptions"),
+    metricType: v.string(),
+    quantity: v.number(),
     timestamp: v.number(),
-  })
-    .index("by_orgId_eventType", ["orgId", "eventType"])
-    .index("by_orgId_timestamp", ["orgId", "timestamp"]),
-
-  // Tenants table
-  tenants: defineTable({
-    name: v.string(),
-    orgId: v.string(), // Clerk organization ID
-    qrSlugs: v.array(
-      v.object({
-        slug: v.string(),
-        active: v.boolean(),
-        createdAt: v.number(),
-      }),
-    ),
-    activeQrSlug: v.string(), // Current active QR slug
-    qrCodeUrl: v.optional(v.string()), // Data URL of the QR code
-    branding: v.optional(
-      v.object({
-        logo: v.optional(v.string()),
-        primaryColor: v.optional(v.string()),
-        secondaryColor: v.optional(v.string()),
-      }),
-    ),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_orgId", ["orgId"])
-    .index("by_activeQrSlug", ["activeQrSlug"]),
-
-  // Rate limiting table
-  rateLimits: defineTable({
-    identifier: v.string(), // IP address or other identifier
-    action: v.string(), // The action being rate limited (e.g., "publicAssessment", "imageUpload")
-    count: v.number(), // Number of requests in the current window
-    windowStart: v.number(), // Start timestamp of the current window
-    expiresAt: v.number(), // When this record should be cleaned up
-  })
-    .index("by_identifier_and_action", ["identifier", "action"])
-    .index("by_expiresAt", ["expiresAt"]), // For cleanup
-
-  // Repair costs reference table
-  repairCosts: defineTable({
-    orgId: v.string(), // For multi-tenant isolation
-    damageType: v.string(), // "scratch", "dent", "rust", etc.
-    vehicleType: v.string(), // "sedan", "suv", "truck", etc.
-    severity: v.string(), // "minor", "moderate", "severe"
-    location: v.string(), // "door", "hood", "bumper", etc.
-    minCost: v.number(), // Minimum estimated cost
-    maxCost: v.number(), // Maximum estimated cost
-    averageCost: v.number(), // Average cost
-    laborHours: v.optional(v.number()), // Estimated labor hours
-    partsCost: v.optional(v.number()), // Estimated parts cost
-    notes: v.optional(v.string()),
-    lastUpdated: v.number(),
-    createdBy: v.string(),
     createdAt: v.number(),
   })
     .index("by_orgId", ["orgId"])
-    .index("by_damageType", ["damageType"])
-    .index("by_orgId_damageType_severity", ["orgId", "damageType", "severity"])
-    .index("by_orgId_location", ["orgId", "location"]),
-
-  // Cost estimates table for specific assessments
-  costEstimates: defineTable({
-    assessmentId: v.id("assessments"),
-    vehicleId: v.id("vehicles"),
-    orgId: v.string(),
-    totalEstimate: v.number(),
-    lineItems: v.array(
-      v.object({
-        id: v.string(),
-        damageType: v.string(),
-        location: v.string(),
-        severity: v.string(),
-        description: v.string(),
-        minCost: v.number(),
-        maxCost: v.number(),
-        selectedCost: v.number(),
-        laborHours: v.optional(v.number()),
-        partsCost: v.optional(v.number()),
-        notes: v.optional(v.string()),
-        imageId: v.optional(v.string()),
-        aiDetected: v.boolean(),
-      }),
-    ),
-    status: v.string(), // "draft", "finalized", "approved", "rejected"
-    notes: v.optional(v.string()),
-    createdBy: v.string(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_assessmentId", ["assessmentId"])
-    .index("by_vehicleId", ["vehicleId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_createdAt", ["orgId", "createdAt"]),
+    .index("by_subscriptionId", ["subscriptionId"])
+    .index("by_timestamp", ["timestamp"]),
 })
