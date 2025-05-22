@@ -26,10 +26,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Loader2, Filter, ArrowUpDown, Calendar, BarChart } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LeadAnalytics } from "@/components/lead-analytics"
+import { formatDate } from "@/utils/date-formatter"
+import { useLeadToast } from "@/components/lead-toast"
 
 function LeadsPage() {
   const router = useRouter()
   const { organization } = useOrganization()
+  const leadToast = useLeadToast({ router })
   const [selectedLeads, setSelectedLeads] = useState<Id<"leadAssessments">[]>([])
   const [search, setSearch] = useState("")
   const [filters, setFilters] = useState({
@@ -70,17 +73,15 @@ function LeadsPage() {
     try {
       const result = await bulkConvertMutation({ leadIds: selectedLeads })
       if (result.success.length > 0) {
-        // Show success message
-        alert(`Successfully converted ${result.success.length} leads`)
-        // Clear selection
+        leadToast.showBulkConversionSuccess(result.success.length)
         setSelectedLeads([])
       }
       if (result.failed.length > 0) {
-        // Show error message
-        alert(`Failed to convert ${result.failed.length} leads`)
+        leadToast.showActionError("Bulk Conversion", new Error(`Failed to convert ${result.failed.length} leads`))
       }
     } catch (error) {
       console.error("Failed to bulk convert leads:", error)
+      leadToast.showActionError("Bulk Conversion", error as Error)
     }
   }
 
@@ -95,17 +96,15 @@ function LeadsPage() {
     try {
       const result = await bulkDeleteMutation({ leadIds: selectedLeads })
       if (result.success.length > 0) {
-        // Show success message
-        alert(`Successfully deleted ${result.success.length} leads`)
-        // Clear selection
+        leadToast.showBulkDeletionSuccess(result.success.length)
         setSelectedLeads([])
       }
       if (result.failed.length > 0) {
-        // Show error message
-        alert(`Failed to delete ${result.failed.length} leads`)
+        leadToast.showActionError("Bulk Deletion", new Error(`Failed to delete ${result.failed.length} leads`))
       }
     } catch (error) {
       console.error("Failed to bulk delete leads:", error)
+      leadToast.showActionError("Bulk Deletion", error as Error)
     }
   }
 
@@ -142,10 +141,11 @@ function LeadsPage() {
   async function handleConvertLead(leadId: Id<"leadAssessments">) {
     try {
       const assessmentId = await convertLeadToAssessmentMutation({ leadAssessmentId: leadId })
+      leadToast.showConversionSuccess(assessmentId)
       router.push(`/assessments/${assessmentId}`)
     } catch (error) {
       console.error("Failed to convert lead:", error)
-      alert("Failed to convert lead. Please try again.")
+      leadToast.showConversionError(error as Error)
     }
   }
 
@@ -354,7 +354,7 @@ function LeadsPage() {
                           </p>
                         </div>
                       </TableCell>
-                      <TableCell>{new Date(lead.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell>{formatDate(lead.createdAt)}</TableCell>
                       <TableCell>
                         {lead.convertedToAssessment ? (
                           <Badge

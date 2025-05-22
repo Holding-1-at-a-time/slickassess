@@ -1,86 +1,91 @@
 "use client"
 
 import Link from "next/link"
-import { UserButton } from "@clerk/nextjs"
-import { OrganizationSwitcher } from "./organization-switcher"
-import { ThemeToggle } from "./theme-toggle"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Building, LayoutDashboard, Settings, Users, Car, FileText } from "lucide-react"
+import { BarChart, Calendar, Car, ClipboardList, CreditCard, Home, Settings, Users, Inbox } from "lucide-react"
 
-export function Navbar() {
+interface NavbarProps {
+  className?: string
+}
+
+export function Navbar({ className }: NavbarProps) {
   const pathname = usePathname()
 
-  const navItems = [
+  const routes = [
     {
-      label: "Dashboard",
       href: "/dashboard",
-      icon: LayoutDashboard,
+      icon: Home,
+      label: "Dashboard",
+      active: pathname === "/dashboard",
     },
     {
-      label: "Vehicles",
+      href: "/assessments",
+      icon: ClipboardList,
+      label: "Assessments",
+      active: pathname === "/assessments" || pathname?.startsWith("/assessments/"),
+    },
+    {
+      href: "/leads",
+      icon: Inbox,
+      label: "Leads",
+      active: pathname === "/leads" || pathname?.startsWith("/leads/"),
+    },
+    {
       href: "/vehicles",
       icon: Car,
+      label: "Vehicles",
+      active: pathname === "/vehicles" || pathname?.startsWith("/vehicles/"),
     },
     {
-      label: "Assessments",
-      href: "/assessments",
-      icon: FileText,
-    },
-    {
-      label: "Members",
-      href: "/organization/members",
+      href: "/clients",
       icon: Users,
+      label: "Clients",
+      active: pathname === "/clients" || pathname?.startsWith("/clients/"),
     },
     {
-      label: "Settings",
-      href: "/organization/settings",
+      href: "/calendar",
+      icon: Calendar,
+      label: "Calendar",
+      active: pathname === "/calendar" || pathname?.startsWith("/calendar/"),
+    },
+    {
+      href: "/insights",
+      icon: BarChart,
+      label: "Insights",
+      active: pathname === "/insights",
+    },
+    {
+      href: "/settings/billing",
+      icon: CreditCard,
+      label: "Billing",
+      active: pathname === "/settings/billing",
+    },
+    {
+      href: "/organization",
       icon: Settings,
+      label: "Organization",
+      active: pathname === "/organization" || pathname?.startsWith("/organization/"),
     },
   ]
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-[#707070] bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between">
-        <div className="flex items-center gap-8">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <Building className="h-6 w-6 text-[#00ae98]" />
-            <span className="text-xl font-bold text-[#00ae98] neon-text">SlickAssess</span>
-          </Link>
-
-          <nav className="hidden md:flex">
-            <ul className="flex items-center gap-6">
-              {navItems.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-2 text-sm font-medium transition-colors hover:text-[#00ae98]",
-                      pathname === item.href ? "text-[#00ae98] neon-text" : "text-muted-foreground",
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <OrganizationSwitcher />
-          <ThemeToggle />
-          <UserButton
-            afterSignOutUrl="/sign-in"
-            appearance={{
-              elements: {
-                avatarBox: "h-8 w-8 border-2 border-[#00ae98]",
-              },
-            }}
-          />
-        </div>
-      </div>
-    </header>
+    <nav className={cn("flex items-center space-x-4 lg:space-x-6", className)}>
+      {routes.map((route) => (
+        <Link
+          key={route.href}
+          href={route.href}
+          className={cn(
+            "text-sm font-medium transition-colors hover:text-primary",
+            route.active ? "text-black dark:text-white" : "text-muted-foreground",
+          )}
+        >
+          <div className="flex flex-col items-center gap-1">
+            <route.icon className="h-5 w-5" />
+            <span>{route.label}</span>
+          </div>
+        </Link>
+      ))}
+    </nav>
   )
 }

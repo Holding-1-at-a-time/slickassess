@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-
 import { useParams, useRouter } from "next/navigation"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
@@ -13,12 +12,15 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, ArrowLeft, Car, User, Calendar, FileText, ImageIcon, Check, X } from "lucide-react"
 import Image from "next/image"
 import { withAuth } from "@/components/with-auth"
+import { formatDate, getRelativeTimeString } from "@/utils/date-formatter"
+import { useLeadToast } from "@/components/lead-toast"
 
 function LeadDetailsPage() {
   const params = useParams()
   const router = useRouter()
   const { organization } = useOrganization()
   const leadId = params.id as string
+  const leadToast = useLeadToast({ router })
 
   const lead = useQuery(api.leads.getById, {
     leadId,
@@ -33,9 +35,11 @@ function LeadDetailsPage() {
     try {
       setConverting(true)
       const assessmentId = await convertLeadMutation({ leadAssessmentId: lead._id })
+      leadToast.showConversionSuccess(assessmentId)
       router.push(`/assessments/${assessmentId}`)
     } catch (error) {
       console.error("Failed to convert lead:", error)
+      leadToast.showConversionError(error as Error)
       setConverting(false)
     }
   }
@@ -86,8 +90,7 @@ function LeadDetailsPage() {
           <CardHeader>
             <CardTitle>Lead Information</CardTitle>
             <CardDescription>
-              Submitted on {new Date(lead.createdAt).toLocaleDateString()} at{" "}
-              {new Date(lead.createdAt).toLocaleTimeString()}
+              Submitted on {formatDate(lead.createdAt, true)} ({getRelativeTimeString(lead.createdAt)})
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -263,7 +266,7 @@ function LeadDetailsPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium">Lead Created</p>
-                    <p className="text-xs text-gray-500">{new Date(lead.createdAt).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">{formatDate(lead.createdAt, true)}</p>
                   </div>
                 </div>
 
@@ -274,7 +277,7 @@ function LeadDetailsPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium">Converted to Assessment</p>
-                      <p className="text-xs text-gray-500">{new Date(lead.updatedAt).toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">{formatDate(lead.updatedAt, true)}</p>
                     </div>
                   </div>
                 )}
