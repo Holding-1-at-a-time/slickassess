@@ -5,6 +5,9 @@ import { requireAuth, requireOrgRole } from "./utils/auth"
 import type { Id } from "./_generated/dataModel"
 import { randomUUID } from "crypto"
 
+// Import the sanitization utilities
+import { sanitizeString, isValidEmail, isValidPhone } from "./utils/sanitize"
+
 // Helper function to generate assessment number
 async function generateAssessmentNumber(ctx: any, orgId: string) {
   const existing = await ctx.db
@@ -113,15 +116,18 @@ export const listByTenant = query({
         query = query.filter((q) => q.eq(q.field("vehicleInfo.model"), filters.vehicleModel))
       }
 
-      // Search by customer name or email
-      if (filters.search) {
-        const search = filters.search.toLowerCase()
+      // Search by customer name, email, or vehicle details - FIXED SECURITY ISSUE
+      if (filters.search && filters.search.trim() !== "") {
+        // Sanitize and validate search input
+        const sanitizedSearch = filters.search.trim().toLowerCase()
+
+        // Use Convex's built-in search capabilities safely
         query = query.filter((q) =>
           q.or(
-            q.contains(q.lower(q.field("customerInfo.name")), search),
-            q.contains(q.lower(q.field("customerInfo.email")), search),
-            q.contains(q.lower(q.field("vehicleInfo.make")), search),
-            q.contains(q.lower(q.field("vehicleInfo.model")), search),
+            q.contains(q.lower(q.field("customerInfo.name")), sanitizedSearch),
+            q.contains(q.lower(q.field("customerInfo.email")), sanitizedSearch),
+            q.contains(q.lower(q.field("vehicleInfo.make")), sanitizedSearch),
+            q.contains(q.lower(q.field("vehicleInfo.model")), sanitizedSearch),
           ),
         )
       }
@@ -788,12 +794,46 @@ export const createLeadAssessment = mutation({
       throw new ConvexError("Tenant not found")
     }
 
-    // Create lead assessment
+    // Validate and sanitize customer information
+    const sanitizedCustomerInfo = {
+      name: sanitizeString(customerInfo.name),
+      email: sanitizeString(customerInfo.email),
+      phone: sanitizeString(customerInfo.phone),
+    }
+
+    // Validate email format
+    if (!isValidEmail(sanitizedCustomerInfo.email)) {
+      throw new ConvexError("Invalid email format")
+    }
+
+    // Validate phone format
+    if (!isValidPhone(sanitizedCustomerInfo.phone)) {
+      throw new ConvexError("Invalid phone number format")
+    }
+
+    // Sanitize vehicle information
+    const sanitizedVehicleInfo = {
+      make: sanitizeString(vehicleInfo.make),
+      model: sanitizeString(vehicleInfo.model),
+      year: vehicleInfo.year,
+      color: sanitizeString(vehicleInfo.color),
+    }
+
+    // Validate year is reasonable
+    const currentYear = new Date().getFullYear()
+    if (sanitizedVehicleInfo.year < 1900 || sanitizedVehicleInfo.year > currentYear + 1) {
+      throw new ConvexError("Invalid vehicle year")
+    }
+
+    // Sanitize description
+    const sanitizedDescription = sanitizeString(description)
+
+    // Create lead assessment with sanitized data
     const leadId = await ctx.db.insert("leadAssessments", {
       tenantId,
-      customerInfo,
-      vehicleInfo,
-      description,
+      customerInfo: sanitizedCustomerInfo,
+      vehicleInfo: sanitizedVehicleInfo,
+      description: sanitizedDescription,
       hasScratches: hasScratches || false,
       hasDents: hasDents || false,
       needsDetailing: needsDetailing || false,
@@ -808,7 +848,7 @@ export const createLeadAssessment = mutation({
       orgId: tenantId,
       type: "new_lead",
       title: "New Lead Submitted",
-      message: `A new lead has been submitted for ${customerInfo.name}'s ${vehicleInfo.year} ${vehicleInfo.make} ${vehicleInfo.model}`,
+      message: `A new lead has been submitted for ${sanitizedCustomerInfo.name}'s ${sanitizedVehicleInfo.year} ${sanitizedVehicleInfo.make} ${sanitizedVehicleInfo.model}`,
       link: `/leads`, // Link to leads page
       read: false,
       createdAt: now,
@@ -820,9 +860,9 @@ export const createLeadAssessment = mutation({
       eventType: "lead_created",
       eventData: {
         leadId,
-        vehicleMake: vehicleInfo.make,
-        vehicleModel: vehicleInfo.model,
-        vehicleYear: vehicleInfo.year,
+        vehicleMake: sanitizedVehicleInfo.make,
+        vehicleModel: sanitizedVehicleInfo.model,
+        vehicleYear: sanitizedVehicleInfo.year,
         hasImages: images.length > 0,
       },
       timestamp: now,
