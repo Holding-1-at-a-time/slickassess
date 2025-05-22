@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
-import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
+import { Loader2, AlertCircle, CheckCircle2, DollarSign } from "lucide-react"
 import { AIFeedbackForm } from "@/components/ai-feedback-form"
+import { CostEstimatePanel } from "@/components/cost-estimate-panel"
 import type { Id } from "@/convex/_generated/dataModel"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -26,7 +27,7 @@ export function AIVehicleAnalyzer({
   assessmentId,
   onAnalysisComplete,
 }: AIVehicleAnalyzerProps) {
-  const [activeTab, setActiveTab] = useState<"exterior" | "interior">("exterior")
+  const [activeTab, setActiveTab] = useState<"exterior" | "interior" | "cost">("exterior")
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [analysisResults, setAnalysisResults] = useState<Record<string, any>>({})
@@ -166,7 +167,7 @@ export function AIVehicleAnalyzer({
           )}
         </div>
       )
-    } else {
+    } else if (activeTab === "interior") {
       return (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -220,19 +221,30 @@ export function AIVehicleAnalyzer({
         </div>
       )
     }
+
+    return null
+  }
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as "exterior" | "interior" | "cost")
+    setShowFeedback(false)
   }
 
   return (
     <Card className="w-full">
       <CardHeader>
         <CardTitle>AI Vehicle Analysis</CardTitle>
-        <CardDescription>Analyze vehicle {activeTab} condition using advanced AI</CardDescription>
+        <CardDescription>Analyze vehicle condition and estimate repair costs using advanced AI</CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "exterior" | "interior")}>
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="exterior">Exterior Damage</TabsTrigger>
             <TabsTrigger value="interior">Interior Cleanliness</TabsTrigger>
+            <TabsTrigger value="cost" disabled={!analysisResults.exterior}>
+              <DollarSign className="h-4 w-4 mr-1" />
+              Cost Estimate
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="exterior" className="space-y-4 mt-4">
@@ -260,6 +272,24 @@ export function AIVehicleAnalyzer({
               </div>
             )}
           </TabsContent>
+
+          <TabsContent value="cost" className="mt-4">
+            {assessmentId ? (
+              <CostEstimatePanel
+                assessmentId={assessmentId}
+                vehicleId={vehicleId}
+                aiAnalysisResults={analysisResults.exterior?.damages}
+              />
+            ) : (
+              <div className="text-center p-6 border rounded-md">
+                <AlertCircle className="h-12 w-12 mx-auto mb-2 text-muted-foreground" />
+                <p className="mb-2">Cost estimation requires an assessment</p>
+                <p className="text-sm text-muted-foreground">
+                  Please create or select an assessment to generate a cost estimate
+                </p>
+              </div>
+            )}
+          </TabsContent>
         </Tabs>
 
         {isAnalyzing && (
@@ -283,34 +313,38 @@ export function AIVehicleAnalyzer({
         <Button
           variant="outline"
           onClick={() => {
-            setAnalysisResults((prev) => ({
-              ...prev,
-              [activeTab]: null,
-            }))
-            setShowFeedback(false)
+            if (activeTab !== "cost") {
+              setAnalysisResults((prev) => ({
+                ...prev,
+                [activeTab]: null,
+              }))
+              setShowFeedback(false)
+            }
           }}
-          disabled={isAnalyzing || !analysisResults[activeTab]}
+          disabled={isAnalyzing || (activeTab !== "cost" && !analysisResults[activeTab])}
         >
           Reset
         </Button>
-        <Button onClick={handleAnalyze} disabled={isAnalyzing}>
-          {isAnalyzing ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Analyzing...
-            </>
-          ) : analysisResults[activeTab] ? (
-            <>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Re-Analyze
-            </>
-          ) : (
-            "Analyze Image"
-          )}
-        </Button>
+        {activeTab !== "cost" && (
+          <Button onClick={handleAnalyze} disabled={isAnalyzing}>
+            {isAnalyzing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Analyzing...
+              </>
+            ) : analysisResults[activeTab] ? (
+              <>
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                Re-Analyze
+              </>
+            ) : (
+              "Analyze Image"
+            )}
+          </Button>
+        )}
       </CardFooter>
 
-      {showFeedback && analysisResults[activeTab] && (
+      {showFeedback && analysisResults[activeTab] && activeTab !== "cost" && (
         <div className="px-6 pb-6">
           <AIFeedbackForm
             imageId={imageId}

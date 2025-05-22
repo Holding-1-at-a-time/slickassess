@@ -523,4 +523,60 @@ export default defineSchema({
   })
     .index("by_identifier_and_action", ["identifier", "action"])
     .index("by_expiresAt", ["expiresAt"]), // For cleanup
+
+  // Repair costs reference table
+  repairCosts: defineTable({
+    orgId: v.string(), // For multi-tenant isolation
+    damageType: v.string(), // "scratch", "dent", "rust", etc.
+    vehicleType: v.string(), // "sedan", "suv", "truck", etc.
+    severity: v.string(), // "minor", "moderate", "severe"
+    location: v.string(), // "door", "hood", "bumper", etc.
+    minCost: v.number(), // Minimum estimated cost
+    maxCost: v.number(), // Maximum estimated cost
+    averageCost: v.number(), // Average cost
+    laborHours: v.optional(v.number()), // Estimated labor hours
+    partsCost: v.optional(v.number()), // Estimated parts cost
+    notes: v.optional(v.string()),
+    lastUpdated: v.number(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_orgId", ["orgId"])
+    .index("by_damageType", ["damageType"])
+    .index("by_orgId_damageType_severity", ["orgId", "damageType", "severity"])
+    .index("by_orgId_location", ["orgId", "location"]),
+
+  // Cost estimates table for specific assessments
+  costEstimates: defineTable({
+    assessmentId: v.id("assessments"),
+    vehicleId: v.id("vehicles"),
+    orgId: v.string(),
+    totalEstimate: v.number(),
+    lineItems: v.array(
+      v.object({
+        id: v.string(),
+        damageType: v.string(),
+        location: v.string(),
+        severity: v.string(),
+        description: v.string(),
+        minCost: v.number(),
+        maxCost: v.number(),
+        selectedCost: v.number(),
+        laborHours: v.optional(v.number()),
+        partsCost: v.optional(v.number()),
+        notes: v.optional(v.string()),
+        imageId: v.optional(v.string()),
+        aiDetected: v.boolean(),
+      }),
+    ),
+    status: v.string(), // "draft", "finalized", "approved", "rejected"
+    notes: v.optional(v.string()),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_assessmentId", ["assessmentId"])
+    .index("by_vehicleId", ["vehicleId"])
+    .index("by_orgId", ["orgId"])
+    .index("by_orgId_createdAt", ["orgId", "createdAt"]),
 })
