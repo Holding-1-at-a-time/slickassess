@@ -4,16 +4,18 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import type { AssessmentInfo } from "@/hooks/useSelfAssessmentForm"
+import type { AssessmentInfoSchema } from "@/lib/validations/self-assessment-schema"
+import { FormError } from "@/components/ui/form-error"
 
 interface StepThreeProps {
-  assessmentInfo: AssessmentInfo
-  updateAssessmentInfo: (field: keyof AssessmentInfo, value: boolean | string) => void
+  assessmentInfo: AssessmentInfoSchema
+  updateAssessmentInfo: (field: keyof AssessmentInfoSchema, value: boolean | string) => void
   nextStep: () => void
   prevStep: () => void
+  getFieldError: (field: string) => string | undefined
 }
 
-export function StepThree({ assessmentInfo, updateAssessmentInfo, nextStep, prevStep }: StepThreeProps) {
+export function StepThree({ assessmentInfo, updateAssessmentInfo, nextStep, prevStep, getFieldError }: StepThreeProps) {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold mb-4">Vehicle Condition</h2>
@@ -60,12 +62,16 @@ export function StepThree({ assessmentInfo, updateAssessmentInfo, nextStep, prev
         <Label htmlFor="notes">Additional Notes</Label>
         <Textarea
           id="notes"
-          value={assessmentInfo.notes}
+          value={assessmentInfo.notes || ""}
           onChange={(e) => updateAssessmentInfo("notes", e.target.value)}
           placeholder="Please describe any issues or concerns about your vehicle..."
           rows={4}
+          className={getFieldError("notes") ? "border-red-500" : ""}
         />
+        {getFieldError("notes") && <FormError message={getFieldError("notes")} />}
       </div>
+
+      {getFieldError("form") && <FormError message={getFieldError("form")} />}
 
       <div className="flex justify-between pt-4 gap-4">
         <Button variant="outline" onClick={prevStep} className="flex-1">

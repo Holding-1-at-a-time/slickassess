@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import type { VehicleInfo } from "@/hooks/useSelfAssessmentForm"
+import type { VehicleInfoSchema } from "@/lib/validations/self-assessment-schema"
+import { FormError } from "@/components/ui/form-error"
 
 // Generate years for dropdown
 const currentYear = new Date().getFullYear()
@@ -56,13 +57,14 @@ const vehicleMakes = [
 ]
 
 interface StepTwoProps {
-  vehicleInfo: VehicleInfo
-  updateVehicleInfo: (field: keyof VehicleInfo, value: string) => void
+  vehicleInfo: VehicleInfoSchema
+  updateVehicleInfo: (field: keyof VehicleInfoSchema, value: string) => void
   nextStep: () => void
   prevStep: () => void
+  getFieldError: (field: string) => string | undefined
 }
 
-export function StepTwo({ vehicleInfo, updateVehicleInfo, nextStep, prevStep }: StepTwoProps) {
+export function StepTwo({ vehicleInfo, updateVehicleInfo, nextStep, prevStep, getFieldError }: StepTwoProps) {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold mb-4">Vehicle Information</h2>
@@ -72,7 +74,7 @@ export function StepTwo({ vehicleInfo, updateVehicleInfo, nextStep, prevStep }: 
           Make <span className="text-red-500">*</span>
         </Label>
         <Select value={vehicleInfo.make} onValueChange={(value) => updateVehicleInfo("make", value)}>
-          <SelectTrigger>
+          <SelectTrigger className={getFieldError("make") ? "border-red-500" : ""}>
             <SelectValue placeholder="Select make" />
           </SelectTrigger>
           <SelectContent>
@@ -83,6 +85,7 @@ export function StepTwo({ vehicleInfo, updateVehicleInfo, nextStep, prevStep }: 
             ))}
           </SelectContent>
         </Select>
+        {getFieldError("make") && <FormError message={getFieldError("make")} />}
       </div>
 
       <div className="space-y-2">
@@ -95,7 +98,9 @@ export function StepTwo({ vehicleInfo, updateVehicleInfo, nextStep, prevStep }: 
           onChange={(e) => updateVehicleInfo("model", e.target.value)}
           placeholder="Civic, Accord, etc."
           required
+          className={getFieldError("model") ? "border-red-500" : ""}
         />
+        {getFieldError("model") && <FormError message={getFieldError("model")} />}
       </div>
 
       <div className="space-y-2">
@@ -103,7 +108,7 @@ export function StepTwo({ vehicleInfo, updateVehicleInfo, nextStep, prevStep }: 
           Year <span className="text-red-500">*</span>
         </Label>
         <Select value={vehicleInfo.year} onValueChange={(value) => updateVehicleInfo("year", value)}>
-          <SelectTrigger>
+          <SelectTrigger className={getFieldError("year") ? "border-red-500" : ""}>
             <SelectValue placeholder="Select year" />
           </SelectTrigger>
           <SelectContent>
@@ -114,26 +119,31 @@ export function StepTwo({ vehicleInfo, updateVehicleInfo, nextStep, prevStep }: 
             ))}
           </SelectContent>
         </Select>
+        {getFieldError("year") && <FormError message={getFieldError("year")} />}
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="color">Color</Label>
         <Input
           id="color"
-          value={vehicleInfo.color}
+          value={vehicleInfo.color || ""}
           onChange={(e) => updateVehicleInfo("color", e.target.value)}
           placeholder="Red, Blue, Silver, etc."
+          className={getFieldError("color") ? "border-red-500" : ""}
         />
+        {getFieldError("color") && <FormError message={getFieldError("color")} />}
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="licensePlate">License Plate</Label>
         <Input
           id="licensePlate"
-          value={vehicleInfo.licensePlate}
+          value={vehicleInfo.licensePlate || ""}
           onChange={(e) => updateVehicleInfo("licensePlate", e.target.value)}
           placeholder="ABC123"
+          className={getFieldError("licensePlate") ? "border-red-500" : ""}
         />
+        {getFieldError("licensePlate") && <FormError message={getFieldError("licensePlate")} />}
       </div>
 
       <div className="space-y-2">
@@ -141,11 +151,15 @@ export function StepTwo({ vehicleInfo, updateVehicleInfo, nextStep, prevStep }: 
         <Input
           id="mileage"
           type="number"
-          value={vehicleInfo.mileage}
+          value={vehicleInfo.mileage || ""}
           onChange={(e) => updateVehicleInfo("mileage", e.target.value)}
           placeholder="50000"
+          className={getFieldError("mileage") ? "border-red-500" : ""}
         />
+        {getFieldError("mileage") && <FormError message={getFieldError("mileage")} />}
       </div>
+
+      {getFieldError("form") && <FormError message={getFieldError("form")} />}
 
       <div className="flex justify-between pt-4 gap-4">
         <Button variant="outline" onClick={prevStep} className="flex-1">
