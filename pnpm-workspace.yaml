@@ -1,0 +1,6 @@
+onlyBuiltDependencies:
+  - '@clerk/shared'
+  - bufferutil
+  - esbuild
+  - sharp
+  - utf-8-validate

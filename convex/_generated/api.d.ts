@@ -25,6 +25,7 @@ import type * as calendarEvents from "../calendarEvents.js";
 import type * as calendarIntegration from "../calendarIntegration.js";
 import type * as clients from "../clients.js";
 import type * as images from "../images.js";
+import type * as leads from "../leads.js";
 import type * as notificationTemplates from "../notificationTemplates.js";
 import type * as notifications from "../notifications.js";
 import type * as publicAssessments from "../publicAssessments.js";
@@ -36,6 +37,7 @@ import type * as userClientPreferences from "../userClientPreferences.js";
 import type * as utils_auth from "../utils/auth.js";
 import type * as utils_client_helpers from "../utils/client-helpers.js";
 import type * as utils_rate_limiter from "../utils/rate-limiter.js";
+import type * as utils_sanitize from "../utils/sanitize.js";
 import type * as vehicles from "../vehicles.js";
 
 /**
@@ -59,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   calendarIntegration: typeof calendarIntegration;
   clients: typeof clients;
   images: typeof images;
+  leads: typeof leads;
   notificationTemplates: typeof notificationTemplates;
   notifications: typeof notifications;
   publicAssessments: typeof publicAssessments;
@@ -70,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   "utils/auth": typeof utils_auth;
   "utils/client-helpers": typeof utils_client_helpers;
   "utils/rate-limiter": typeof utils_rate_limiter;
+  "utils/sanitize": typeof utils_sanitize;
   vehicles: typeof vehicles;
 }>;
 export declare const api: FilterApi<

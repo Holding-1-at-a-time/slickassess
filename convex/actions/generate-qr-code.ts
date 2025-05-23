@@ -1,3 +1,17 @@
+/**
+    * @description      : 
+    * @author           : rrome
+    * @group            : 
+    * @created          : 22/05/2025 - 22:19:27
+    * 
+    * MODIFICATION LOG
+    * - Version         : 1.0.0
+    * - Date            : 22/05/2025
+    * - Author          : rrome
+    * - Modification    : 
+**/
+"use node"
+
 import { action } from "../_generated/server"
 import { v } from "convex/values"
 import QRCode from "qrcode"
@@ -31,8 +45,7 @@ export const generateQrCode = action({
 
     try {
       // Generate QR code as data URL
-      const dataUrl = await QRCode.toDataURL(args.url, options)
-      return dataUrl
+      return await QRCode.toDataURL(args.url, options);
     } catch (error) {
       console.error("Error generating QR code:", error)
       throw new Error("Failed to generate QR code")
