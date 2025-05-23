@@ -1,17 +1,3 @@
-/**
-    * @description      : 
-    * @author           : rrome
-    * @group            : 
-    * @created          : 22/05/2025 - 17:15:54
-    * 
-    * MODIFICATION LOG
-    * - Version         : 1.0.0
-    * - Date            : 22/05/2025
-    * - Author          : rrome
-    * - Modification    : 
-**/
-
-
 import ConvexClientProvider from "@/components/convex-client-provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import { getThemeClasses, Theme, THEME_COOKIE_NAME } from "@/lib/theme"

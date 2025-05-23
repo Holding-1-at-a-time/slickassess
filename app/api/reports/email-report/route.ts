@@ -1,43 +1,19 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { auth } from "@clerk/nextjs/server"
-import { formatReportForPrint } from "@/lib/reports/assessment-report-generator"
-import { rateLimit } from "@/convex/utils/rate-limiter"
+import type React from "react"
+import { NextResponse } from "next/server"
+import { Resend } from "resend"
 
-export async function POST(req: NextRequest) {
+import { EmailTemplate } from "@/components/emails/email-template"
+
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+export async function POST(req: Request) {
   try {
-    // Check authentication
-    const { userId, orgId } = auth()
-    if (!userId || !orgId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    // Apply rate limiting
-    const rateLimitResult = await rateLimit({
-      identifier: `email_report_${userId}`,
-      limit: 20,
-      timeframe: 60 * 60, // 1 hour
-    })
-
-    if (!rateLimitResult.success) {
-      return NextResponse.json({ error: "Rate limit exceeded. Please try again later." }, { status: 429 })
-    }
-
-    // Parse request body
     const body = await req.json()
-    const { assessmentData, emailAddress, customerInfo, businessInfo, reportNumber, generatedDate } = body
+    const { assessmentData, customerInfo, businessInfo, reportNumber, generatedDate, email } = body
 
-    if (!assessmentData || !emailAddress) {
-      return NextResponse.json({ error: "Assessment data and email address are required" }, { status: 400 })
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(emailAddress)) {
-      return NextResponse.json({ error: "Invalid email address" }, { status: 400 })
-    }
-
-    // Generate PDF report
-    const pdfResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/reports/generate-pdf`, {
+    // Generate PDF report using relative path for server-side call
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 3000}`
+    const pdfResponse = await fetch(`${baseUrl}/api/reports/generate-pdf`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -52,58 +28,30 @@ export async function POST(req: NextRequest) {
     })
 
     if (!pdfResponse.ok) {
-      throw new Error("Failed to generate PDF report")
+      console.error("PDF generation failed:", pdfResponse.status, pdfResponse.statusText)
+      return NextResponse.json({ error: "Failed to generate PDF" }, { status: 500 })
     }
 
-    const pdfBlob = await pdfResponse.blob()
-    const pdfBuffer = await pdfBlob.arrayBuffer()
+    const pdfBuffer = await pdfResponse.arrayBuffer()
 
-    // Format text version for email body
-    const textReport = formatReportForPrint(assessmentData)
-
-    // Send email using Gmail API
-    const vehicleInfo = `${assessmentData.vehicleInfo.year} ${assessmentData.vehicleInfo.make} ${assessmentData.vehicleInfo.model}`
-
-    const emailData = {
-      to: emailAddress,
-      subject: `Vehicle Assessment Report - ${vehicleInfo} - ${reportNumber}`,
-      text: textReport,
-      html: `
-        <h1>Vehicle Assessment Report</h1>
-        <p>Please find attached your detailed vehicle assessment report for your ${vehicleInfo}.</p>
-        <p><strong>Report Number:</strong> ${reportNumber}</p>
-        <p><strong>Generated Date:</strong> ${new Date(generatedDate).toLocaleDateString()}</p>
-        <p><strong>Total Estimate:</strong> $${assessmentData.pricingBreakdown.total.toFixed(2)}</p>
-        <p>The attached PDF contains a comprehensive breakdown of all detected issues, pricing details, and service recommendations.</p>
-        <p>If you have any questions about this assessment, please contact us.</p>
-        <p>Thank you for your business!</p>
-      `,
+    await resend.emails.send({
+      from: "Acme <onboarding@resend.dev>",
+      to: [email],
+      subject: "Your Report is Ready!",
       attachments: [
         {
-          filename: `assessment-report-${reportNumber}.pdf`,
+          filename: `report-${reportNumber}.pdf`,
           content: Buffer.from(pdfBuffer),
-          contentType: "application/pdf",
         },
       ],
-    }
-
-    // Call Gmail API to send email
-    const emailResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/email/send`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(emailData),
+      react: EmailTemplate({ firstName: customerInfo.firstName, reportNumber: reportNumber }) as React.ReactElement,
     })
 
-    if (!emailResponse.ok) {
-      throw new Error("Failed to send email")
-    }
-
-    // Return success response
-    return NextResponse.json({ success: true, message: "Assessment report emailed successfully" })
+    return NextResponse.json({
+      status: "Success",
+    })
   } catch (error) {
-    console.error("Error emailing report:", error)
-    return NextResponse.json({ error: "Failed to email report" }, { status: 500 })
+    console.error("Email sending failed:", error)
+    return NextResponse.json({ error: "Failed to send email" }, { status: 500 })
   }
 }
