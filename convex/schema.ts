@@ -675,4 +675,30 @@ export default defineSchema({
     .index("by_reportId", ["reportId"])
     .index("by_status", ["status"])
     .index("by_createdAt", ["createdAt"]),
+
+  // Real-time events table
+  realTimeEvents: defineTable({
+    orgId: v.string(),
+    eventType: v.string(),
+    eventData: v.object({}),
+    userId: v.optional(v.string()),
+    timestamp: v.number(),
+    processed: v.boolean(),
+  })
+    .index("by_orgId_and_timestamp", ["orgId", "timestamp"])
+    .index("by_orgId_and_processed", ["orgId", "processed"])
+    .index("by_timestamp", ["timestamp"]), // For cleanup
+
+  // Real-time metrics table
+  realTimeMetrics: defineTable({
+    orgId: v.string(),
+    date: v.number(), // Start of day timestamp
+    totalAppointments: v.number(),
+    totalRevenue: v.number(),
+    activeUsers: v.number(),
+    assessmentsCompleted: v.number(),
+    lastUpdated: v.number(),
+  })
+    .index("by_orgId_and_date", ["orgId", "date"])
+    .index("by_date", ["date"]), // For cleanup
 })
