@@ -117,3 +117,126 @@ export function formatReportForPrint(assessmentData: AIAssessmentData): string {
 
   return lines.join("\n")
 }
+
+// PDF Generation Utilities
+export async function generatePdfReport(
+  assessmentData: AIAssessmentData,
+  customerInfo?: any,
+  businessInfo?: any,
+): Promise<Blob> {
+  try {
+    // This function would use a PDF generation library like jsPDF or html-to-pdf
+    // For server-side implementation, we'll use a route handler
+    const response = await fetch("/api/reports/generate-pdf", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assessmentData,
+        customerInfo,
+        businessInfo,
+        reportNumber: `AR-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+        generatedDate: new Date().toISOString(),
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error("Failed to generate PDF report")
+    }
+
+    return await response.blob()
+  } catch (error) {
+    console.error("Error generating PDF report:", error)
+    throw error
+  }
+}
+
+// Email Report Utilities
+export async function emailAssessmentReport(
+  assessmentData: AIAssessmentData,
+  emailAddress: string,
+  customerInfo?: any,
+  businessInfo?: any,
+): Promise<boolean> {
+  try {
+    const response = await fetch("/api/reports/email-report", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assessmentData,
+        emailAddress,
+        customerInfo,
+        businessInfo,
+        reportNumber: `AR-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+        generatedDate: new Date().toISOString(),
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error("Failed to email assessment report")
+    }
+
+    const result = await response.json()
+    return result.success
+  } catch (error) {
+    console.error("Error emailing assessment report:", error)
+    return false
+  }
+}
+
+// Save Report to Database
+export async function saveAssessmentReport(
+  assessmentData: AIAssessmentData,
+  vehicleId: string,
+  assessmentId?: string,
+  customerId?: string,
+): Promise<string> {
+  try {
+    const response = await fetch("/api/reports/save", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assessmentData,
+        vehicleId,
+        assessmentId,
+        customerId,
+        reportNumber: `AR-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+        generatedDate: new Date().toISOString(),
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error("Failed to save assessment report")
+    }
+
+    const result = await response.json()
+    return result.reportId
+  } catch (error) {
+    console.error("Error saving assessment report:", error)
+    throw error
+  }
+}
+
+// Generate a shareable link for the report
+export async function generateReportShareLink(reportId: string): Promise<string> {
+  try {
+    const response = await fetch(`/api/reports/share-link?reportId=${reportId}`, {
+      method: "GET",
+    })
+
+    if (!response.ok) {
+      throw new Error("Failed to generate share link")
+    }
+
+    const result = await response.json()
+    return result.shareLink
+  } catch (error) {
+    console.error("Error generating share link:", error)
+    throw error
+  }
+}

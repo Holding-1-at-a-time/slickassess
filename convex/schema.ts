@@ -619,4 +619,27 @@ export default defineSchema({
     .index("by_vehicleId", ["vehicleId"])
     .index("by_assessmentId", ["assessmentId"])
     .index("by_orgId_createdAt", ["orgId", "createdAt"]),
+
+  // Assessment Reports
+  assessmentReports: defineTable({
+    orgId: v.string(),
+    userId: v.string(),
+    vehicleId: v.id("vehicles"),
+    assessmentId: v.optional(v.id("assessments")),
+    customerId: v.optional(v.id("clients")),
+    reportNumber: v.string(),
+    generatedDate: v.string(),
+    assessmentData: v.any(),
+    status: v.string(), // active, archived, deleted
+    shareEnabled: v.boolean(),
+    shareToken: v.optional(v.string()),
+    shareExpiresAt: v.optional(v.string()),
+    viewCount: v.optional(v.number()),
+    lastViewed: v.optional(v.string()),
+  })
+    .index("by_org", ["orgId"])
+    .index("by_vehicle", ["vehicleId"])
+    .index("by_assessment", ["assessmentId"])
+    .index("by_customer", ["customerId"])
+    .index("by_share_token", ["shareToken"]),
 })
