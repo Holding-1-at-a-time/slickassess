@@ -533,7 +533,7 @@ export class GoogleCalendarService {
   }
 
   private parseReminders(reminders: any): Array<{ id: string; method: string; minutes: number }> {
-    if (!reminders?.overrides) return []
+    if (!reminders?.overrides) {
 
     return reminders.overrides.map((reminder: any, index: number) => ({
       id: `reminder_${index}_${Date.now()}`,
