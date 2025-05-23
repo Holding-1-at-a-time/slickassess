@@ -151,9 +151,18 @@ describe("Predictive Analytics", () => {
       const result = await forecastRevenue("org123", 12, 3)
 
       const forecastMonths = result.forecastData.map((item) => item.month)
-      expect(forecastMonths).toContain("2024-01")
-      expect(forecastMonths).toContain("2024-02")
-      expect(forecastMonths).toContain("2024-03")
+  
+      // Extract the last month from historical data
+      const lastHistoricalMonth = mockRows[mockRows.length - 1].month
+      const [lastYear, lastMonth] = lastHistoricalMonth.split("-").map(Number)
+  
+      // Check that forecast months follow the correct sequence
+      for (let i = 0; i < forecastMonths.length; i++) {
+        const expectedMonth = ((lastMonth + i) % 12) + 1
+        const expectedYear = lastYear + Math.floor((lastMonth + i) / 12)
+        const expectedMonthStr = `${expectedYear}-${expectedMonth.toString().padStart(2, '0')}`
+        expect(forecastMonths[i]).toBe(expectedMonthStr)
+      }
     })
   })
 
