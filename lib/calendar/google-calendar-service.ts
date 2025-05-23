@@ -334,7 +334,7 @@ export class GoogleCalendarService {
 
       if (eventData.title) {
       if (eventData.description) {
-      if (eventData.location) updateData.location = eventData.location
+      if (eventData.location) {
       if (eventData.startTime) {
         updateData.start = {
           dateTime: new Date(eventData.startTime).toISOString(),
