@@ -1,118 +1,231 @@
 import { NextResponse } from "next/server"
-import { logger } from "@/lib/logging/logger"
+import { ZodError } from "zod"
+import { logger } from "./logging/logger"
 
-export type ErrorResponse = {
-  success: false
-  error: string
-  code: string
-  details?: any
-  status: number
+// Error types
+export enum ErrorType {
+  VALIDATION = "validation",
+  AUTHENTICATION = "authentication",
+  AUTHORIZATION = "authorization",
+  NOT_FOUND = "not_found",
+  CONFLICT = "conflict",
+  RATE_LIMIT = "rate_limit",
+  EXTERNAL_SERVICE = "external_service",
+  DATABASE = "database",
+  INTERNAL = "internal",
 }
 
-export type ErrorOptions = {
-  code?: string
-  details?: any
-  status?: number
-  log?: boolean
-  logLevel?: "error" | "warn" | "info"
+// Error codes
+export enum ErrorCode {
+  // Validation errors
+  INVALID_INPUT = "invalid_input",
+  MISSING_REQUIRED_FIELD = "missing_required_field",
+  INVALID_FORMAT = "invalid_format",
+
+  // Authentication errors
+  UNAUTHENTICATED = "unauthenticated",
+  INVALID_CREDENTIALS = "invalid_credentials",
+  SESSION_EXPIRED = "session_expired",
+
+  // Authorization errors
+  UNAUTHORIZED = "unauthorized",
+  INSUFFICIENT_PERMISSIONS = "insufficient_permissions",
+  FORBIDDEN_RESOURCE = "forbidden_resource",
+
+  // Not found errors
+  RESOURCE_NOT_FOUND = "resource_not_found",
+  ENDPOINT_NOT_FOUND = "endpoint_not_found",
+
+  // Conflict errors
+  RESOURCE_ALREADY_EXISTS = "resource_already_exists",
+  STALE_DATA = "stale_data",
+
+  // Rate limit errors
+  TOO_MANY_REQUESTS = "too_many_requests",
+
+  // External service errors
+  SERVICE_UNAVAILABLE = "service_unavailable",
+  EXTERNAL_REQUEST_FAILED = "external_request_failed",
+
+  // Database errors
+  DATABASE_ERROR = "database_error",
+  QUERY_FAILED = "query_failed",
+
+  // Internal errors
+  INTERNAL_SERVER_ERROR = "internal_server_error",
+  UNHANDLED_EXCEPTION = "unhandled_exception",
 }
 
+// HTTP status codes mapping
+const statusCodeMap: Record<ErrorType, number> = {
+  [ErrorType.VALIDATION]: 400,
+  [ErrorType.AUTHENTICATION]: 401,
+  [ErrorType.AUTHORIZATION]: 403,
+  [ErrorType.NOT_FOUND]: 404,
+  [ErrorType.CONFLICT]: 409,
+  [ErrorType.RATE_LIMIT]: 429,
+  [ErrorType.EXTERNAL_SERVICE]: 502,
+  [ErrorType.DATABASE]: 503,
+  [ErrorType.INTERNAL]: 500,
+}
+
+// Application error class
 export class AppError extends Error {
-  code: string
+  type: ErrorType
+  code: ErrorCode
   details?: any
   status: number
 
-  constructor(message: string, options: ErrorOptions = {}) {
+  constructor(message: string, type: ErrorType, code: ErrorCode, details?: any) {
     super(message)
     this.name = "AppError"
-    this.code = options.code || "INTERNAL_ERROR"
-    this.details = options.details
-    this.status = options.status || 500
+    this.type = type
+    this.code = code
+    this.details = details
+    this.status = statusCodeMap[type]
 
     // Capture stack trace
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, AppError)
     }
   }
+
+  // Convert to JSON for logging
+  toJSON() {
+    return {
+      name: this.name,
+      message: this.message,
+      type: this.type,
+      code: this.code,
+      status: this.status,
+      details: this.details,
+      stack: this.stack,
+    }
+  }
 }
 
-export function handleApiError(error: unknown, defaultMessage = "An unexpected error occurred") {
-  // Determine if this is a known AppError or an unknown error
-  const isAppError = error instanceof AppError
+// Function to handle API errors
+export function handleApiError(error: unknown, req?: Request) {
+  // Default error response
+  let errorResponse = {
+    success: false,
+    error: "An unexpected error occurred",
+    code: ErrorCode.INTERNAL_SERVER_ERROR,
+    type: ErrorType.INTERNAL,
+    status: 500,
+  }
 
-  // Get error details
-  const message = isAppError ? error.message : error instanceof Error ? error.message : defaultMessage
+  // Extract request information for logging
+  const requestInfo = req
+    ? {
+        method: req.method,
+        url: req.url,
+        headers: Object.fromEntries(req.headers.entries()),
+      }
+    : undefined
 
-  const code = isAppError ? error.code : "INTERNAL_ERROR"
-  const status = isAppError ? error.status : 500
-  const details = isAppError ? error.details : undefined
+  // Handle different error types
+  if (error instanceof AppError) {
+    // Handle application errors
+    errorResponse = {
+      success: false,
+      error: error.message,
+      code: error.code,
+      type: error.type,
+      status: error.status,
+    }
 
-  // Log the error
-  logger.error({
-    message: `API Error: ${message}`,
-    code,
-    status,
-    details,
-    stack: error instanceof Error ? error.stack : undefined,
-  })
+    // Log the error
+    logger.error({
+      message: `API Error: ${error.message}`,
+      error: error.toJSON(),
+      request: requestInfo,
+    })
+  } else if (error instanceof ZodError) {
+    // Handle validation errors
+    errorResponse = {
+      success: false,
+      error: "Validation error",
+      code: ErrorCode.INVALID_INPUT,
+      type: ErrorType.VALIDATION,
+      status: 400,
+      details: error.errors,
+    }
+
+    // Log the error
+    logger.warn({
+      message: "Validation Error",
+      error: {
+        name: "ZodError",
+        issues: error.errors,
+      },
+      request: requestInfo,
+    })
+  } else if (error instanceof Error) {
+    // Handle generic errors
+    errorResponse = {
+      success: false,
+      error: error.message || "An unexpected error occurred",
+      code: ErrorCode.UNHANDLED_EXCEPTION,
+      type: ErrorType.INTERNAL,
+      status: 500,
+    }
+
+    // Log the error
+    logger.error({
+      message: `Unhandled Error: ${error.message}`,
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      },
+      request: requestInfo,
+    })
+  } else {
+    // Handle unknown errors
+    logger.error({
+      message: "Unknown Error",
+      error,
+      request: requestInfo,
+    })
+  }
 
   // Return formatted error response
   return NextResponse.json(
     {
       success: false,
-      error: message,
-      code,
-      details,
+      error: errorResponse.error,
+      code: errorResponse.code,
+      type: errorResponse.type,
     },
-    { status },
+    { status: errorResponse.status },
   )
 }
 
-export function createErrorResponse(message: string, options: ErrorOptions = {}): ErrorResponse {
-  const { code = "INTERNAL_ERROR", details, status = 500, log = true, logLevel = "error" } = options
+// Error factory functions
+export const createError = {
+  validation: (message: string, details?: any) =>
+    new AppError(message, ErrorType.VALIDATION, ErrorCode.INVALID_INPUT, details),
 
-  if (log) {
-    const logMethod = logger[logLevel]
-    logMethod?.({
-      message: `Error: ${message}`,
-      code,
-      status,
-      details,
-    })
-  }
+  authentication: (message: string, code = ErrorCode.UNAUTHENTICATED) =>
+    new AppError(message, ErrorType.AUTHENTICATION, code),
 
-  return {
-    success: false,
-    error: message,
-    code,
-    details,
-    status,
-  }
-}
+  authorization: (message: string, code = ErrorCode.UNAUTHORIZED) =>
+    new AppError(message, ErrorType.AUTHORIZATION, code),
 
-// Common error factories
-export const errors = {
-  unauthorized: (message = "Unauthorized access", details?: any) =>
-    new AppError(message, { code: "UNAUTHORIZED", status: 401, details }),
+  notFound: (message: string, code = ErrorCode.RESOURCE_NOT_FOUND) => new AppError(message, ErrorType.NOT_FOUND, code),
 
-  forbidden: (message = "Access forbidden", details?: any) =>
-    new AppError(message, { code: "FORBIDDEN", status: 403, details }),
+  conflict: (message: string, code = ErrorCode.RESOURCE_ALREADY_EXISTS) =>
+    new AppError(message, ErrorType.CONFLICT, code),
 
-  notFound: (message = "Resource not found", details?: any) =>
-    new AppError(message, { code: "NOT_FOUND", status: 404, details }),
+  rateLimit: (message: string) => new AppError(message, ErrorType.RATE_LIMIT, ErrorCode.TOO_MANY_REQUESTS),
 
-  badRequest: (message = "Invalid request", details?: any) =>
-    new AppError(message, { code: "BAD_REQUEST", status: 400, details }),
+  externalService: (message: string, details?: any) =>
+    new AppError(message, ErrorType.EXTERNAL_SERVICE, ErrorCode.EXTERNAL_REQUEST_FAILED, details),
 
-  conflict: (message = "Resource conflict", details?: any) =>
-    new AppError(message, { code: "CONFLICT", status: 409, details }),
+  database: (message: string, details?: any) =>
+    new AppError(message, ErrorType.DATABASE, ErrorCode.DATABASE_ERROR, details),
 
-  tooManyRequests: (message = "Rate limit exceeded", details?: any) =>
-    new AppError(message, { code: "RATE_LIMIT_EXCEEDED", status: 429, details }),
-
-  internal: (message = "Internal server error", details?: any) =>
-    new AppError(message, { code: "INTERNAL_ERROR", status: 500, details }),
-
-  serviceUnavailable: (message = "Service unavailable", details?: any) =>
-    new AppError(message, { code: "SERVICE_UNAVAILABLE", status: 503, details }),
+  internal: (message: string, details?: any) =>
+    new AppError(message, ErrorType.INTERNAL, ErrorCode.INTERNAL_SERVER_ERROR, details),
 }
