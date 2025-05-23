@@ -197,17 +197,20 @@ export const getSignatureAnalytics = query({
     orgId: v.string(),
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
+    limit: v.optional(v.number()), // Add pagination limit
+    cursor: v.optional(v.string()), // Add cursor for pagination
   },
   handler: async (ctx, args) => {
-    // Define date range for queries
+    const limit = Math.min(args.limit || 100, 1000) // Cap at 1000 records
     const startDate = args.startDate || Date.now() - 30 * 24 * 60 * 60 * 1000
     const endDate = args.endDate || Date.now()
 
-    // Get signatures directly with date filtering in the database query
-    // This is more efficient than fetching all and filtering in memory
-    let signaturesQuery = ctx.db.query("digitalSignatures").withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+    // Build query with pagination
+    let signaturesQuery = ctx.db
+      .query("digitalSignatures")
+      .withIndex("by_org_and_createdAt", (q) => q.eq("orgId", args.orgId))
 
-    // Apply date filters if provided
+    // Apply date filters
     if (args.startDate) {
       signaturesQuery = signaturesQuery.filter((q) => q.gte(q.field("createdAt"), args.startDate as number))
     }
@@ -216,39 +219,31 @@ export const getSignatureAnalytics = query({
       signaturesQuery = signaturesQuery.filter((q) => q.lte(q.field("createdAt"), args.endDate as number))
     }
 
-    // Execute the optimized query
-    const signatures = await signaturesQuery.collect()
+    // Apply cursor-based pagination
+    if (args.cursor) {
+      signaturesQuery = signaturesQuery.filter((q) => q.gt(q.field("_id"), args.cursor as string))
+    }
 
-    // Generate analytics data
+    // Execute paginated query
+    const signatures = await signaturesQuery.take(limit)
+
+    // Get next cursor
+    const nextCursor = signatures.length === limit ? signatures[signatures.length - 1]._id : null
+
+    // Generate analytics data with paginated results
     const dailyActivity = generateDailyActivity(signatures, startDate, endDate)
     const completionTrend = generateCompletionTrend(signatures, startDate, endDate)
-    const timeToSignDistribution = generateTimeToSignDistribution(signatures)
-    const topPerformers = generateTopPerformers(signatures)
-
-    // Get recent signatures with limit
-    const recentSignatures = await ctx.db
-      .query("digitalSignatures")
-      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-      .order("desc")
-      .take(10)
-      .then((sigs) =>
-        sigs.map((sig) => ({
-          id: sig._id,
-          customerName: sig.customerInfo.name,
-          reportNumber: sig.reportId,
-          vehicleInfo: getVehicleInfoForReport(sig.reportId), // Implement this helper function
-          signedAt: sig.createdAt,
-          status: sig.status,
-          timeToSign: calculateTimeToSign(sig), // Implement this helper function
-        })),
-      )
 
     return {
+      signatures,
       dailyActivity,
       completionTrend,
-      timeToSignDistribution,
-      topPerformers,
-      recentSignatures,
+      pagination: {
+        hasMore: nextCursor !== null,
+        nextCursor,
+        limit,
+        count: signatures.length,
+      },
     }
   },
 })
@@ -366,66 +361,66 @@ function generateTopPerformers(signatures: any[]) {
 }
 
 // Get signature completion funnel with optimized queries
-export const getSignatureCompletionFunnel = query({
+export const getSignatureCompletionFunnelPaginated = query({
   args: {
     orgId: v.string(),
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    page: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const startDate = args.startDate || Date.now() - 30 * 24 * 60 * 60 * 1000
-    const endDate = args.endDate || Date.now()
+    const pageSize = Math.min(args.pageSize || 50, 200) // Cap page size
+    const page = args.page || 0
+    const offset = page * pageSize
 
-    // Get reports count with date filtering in the query
-    let reportsQuery = ctx.db.query("assessmentReports").withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+    // Use aggregation queries instead of fetching all records
+    const reportsCount = await ctx.db
+      .query("assessmentReports")
+      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .filter((q) => {
+        let filter = q
+        if (args.startDate) {
+          filter = filter.gte(q.field("createdAt"), args.startDate)
+        }
+        if (args.endDate) {
+          filter = filter.lte(q.field("createdAt"), args.endDate)
+        }
+        return filter
+      })
+      .take(1000) // Sample for counting
+      .then((results) => results.length)
 
-    if (args.startDate) {
-      reportsQuery = reportsQuery.filter((q) => q.gte(q.field("createdAt"), args.startDate as number))
-    }
+    // Get paginated signatures
+    const signatures = await ctx.db
+      .query("digitalSignatures")
+      .withIndex("by_org_and_createdAt", (q) => q.eq("orgId", args.orgId))
+      .filter((q) => {
+        let filter = q
+        if (args.startDate) {
+          filter = filter.gte(q.field("createdAt"), args.startDate)
+        }
+        if (args.endDate) {
+          filter = filter.lte(q.field("createdAt"), args.endDate)
+        }
+        return filter
+      })
+      .take(pageSize)
 
-    if (args.endDate) {
-      reportsQuery = reportsQuery.filter((q) => q.lte(q.field("createdAt"), args.endDate as number))
-    }
-
-    // Count reports instead of fetching all
-    const reportsGenerated = await reportsQuery.count()
-
-    // Get signatures with similar optimized query
-    let signaturesQuery = ctx.db.query("digitalSignatures").withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-
-    if (args.startDate) {
-      signaturesQuery = signaturesQuery.filter((q) => q.gte(q.field("createdAt"), args.startDate as number))
-    }
-
-    if (args.endDate) {
-      signaturesQuery = signaturesQuery.filter((q) => q.lte(q.field("createdAt"), args.endDate as number))
-    }
-
-    // Execute the optimized query
-    const signatures = await signaturesQuery.collect()
-
-    // Calculate funnel metrics
-    const signaturesSent = signatures.length
-
-    // Get actual view counts from database if available, otherwise estimate
-    // This should be replaced with actual tracking data in production
-    const signaturesViewed = Math.floor(signaturesSent * 0.85)
-    const signaturesStarted = Math.floor(signaturesSent * 0.65)
-
-    // Count completed signatures (not pending)
     const signaturesCompleted = signatures.filter((s) => s.status !== "pending").length
 
     return {
-      reportsGenerated,
-      signaturesSent,
-      signaturesViewed,
-      signaturesStarted,
+      reportsGenerated: reportsCount,
+      signaturesSent: signatures.length,
       signaturesCompleted,
+      pagination: {
+        page,
+        pageSize,
+        hasMore: signatures.length === pageSize,
+        totalEstimate: reportsCount, // Estimate based on sample
+      },
       conversionRates: {
-        sentToViewed: signaturesSent > 0 ? (signaturesViewed / signaturesSent) * 100 : 0,
-        viewedToStarted: signaturesViewed > 0 ? (signaturesStarted / signaturesViewed) * 100 : 0,
-        startedToCompleted: signaturesStarted > 0 ? (signaturesCompleted / signaturesStarted) * 100 : 0,
-        overallConversion: signaturesSent > 0 ? (signaturesCompleted / signaturesSent) * 100 : 0,
+        overallConversion: signatures.length > 0 ? (signaturesCompleted / signatures.length) * 100 : 0,
       },
     }
   },

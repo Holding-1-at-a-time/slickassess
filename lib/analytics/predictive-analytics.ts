@@ -1,5 +1,49 @@
 import { getBigQueryClient } from "./bigquery"
 
+class PredictiveAnalyticsError extends Error {
+  code: string
+  context: any
+
+  constructor(message: string, code: string, context?: any) {
+    super(message)
+    this.name = "PredictiveAnalyticsError"
+    this.code = code
+    this.context = context
+    Object.setPrototypeOf(this, PredictiveAnalyticsError.prototype)
+  }
+}
+
+class DataInsufficientError extends PredictiveAnalyticsError {
+  constructor(required: number, actual: number) {
+    super(
+      `Insufficient data for prediction. Requires at least ${required} data points, but only ${actual} were provided.`,
+      "INSUFFICIENT_DATA",
+      { required, actual },
+    )
+    Object.setPrototypeOf(this, DataInsufficientError.prototype)
+  }
+}
+
+class InvalidDateRangeError extends PredictiveAnalyticsError {
+  constructor(min: number, actual: number) {
+    super(
+      `Invalid date range. Date range cannot exceed ${min} days, but ${actual} were provided.`,
+      "INVALID_DATE_RANGE",
+      { min, actual },
+    )
+    Object.setPrototypeOf(this, InvalidDateRangeError.prototype)
+  }
+}
+
+class BigQueryConnectionError extends PredictiveAnalyticsError {
+  constructor(originalError: Error) {
+    super(`Failed to connect to BigQuery or execute query.`, "BIGQUERY_CONNECTION_ERROR", {
+      originalError: originalError.message,
+    })
+    Object.setPrototypeOf(this, BigQueryConnectionError.prototype)
+  }
+}
+
 // Simple linear regression for time series forecasting
 function linearRegression(data: Array<{ x: number; y: number }>): { slope: number; intercept: number; r2: number } {
   const n = data.length
@@ -77,6 +121,15 @@ export async function forecastAppointments(
   confidence: number
 }> {
   try {
+    // Validate inputs
+    if (days < 7) {
+      throw new DataInsufficientError(7, days)
+    }
+
+    if (forecastDays > 90) {
+      throw new InvalidDateRangeError(0, forecastDays)
+    }
+
     const client = getBigQueryClient()
 
     // Query historical appointment data
@@ -105,6 +158,10 @@ export async function forecastAppointments(
       date: row.date.value,
       count: row.count,
     }))
+
+    if (historicalData.length < 7) {
+      throw new DataInsufficientError(7, historicalData.length)
+    }
 
     // Convert dates to numeric values for regression
     const baseDate = new Date(historicalData[0]?.date || new Date()).getTime()
@@ -139,13 +196,19 @@ export async function forecastAppointments(
       confidence: r2,
     }
   } catch (error) {
-    console.error("Error forecasting appointments:", error)
-    return {
-      historicalData: [],
-      forecastData: [],
-      trend: "stable",
-      confidence: 0,
+    if (error instanceof PredictiveAnalyticsError) {
+      console.error(`Predictive Analytics Error [${error.code}]:`, error.message, error.context)
+      throw error
     }
+
+    if (error.message?.includes("BigQuery")) {
+      throw new BigQueryConnectionError(error as Error)
+    }
+
+    console.error("Unexpected error in forecastAppointments:", error)
+    throw new PredictiveAnalyticsError("Failed to forecast appointments", "FORECAST_FAILED", {
+      originalError: error.message,
+    })
   }
 }
 
@@ -254,8 +317,12 @@ export async function predictCustomerChurn(
   factors: Array<{ factor: string; impact: number }>
 }> {
   try {
-    // In a real implementation, this would use a trained ML model
-    // For now, we'll use a simple heuristic based on customer activity
+    if (!orgId || !clientId) {
+      throw new PredictiveAnalyticsError("Missing required parameters", "MISSING_PARAMETERS", {
+        orgId: !!orgId,
+        clientId: !!clientId,
+      })
+    }
 
     const client = getBigQueryClient()
 
@@ -280,11 +347,7 @@ export async function predictCustomerChurn(
     })
 
     if (!rows || rows.length === 0) {
-      return {
-        churnProbability: 0.5,
-        riskLevel: "medium",
-        factors: [{ factor: "Insufficient data", impact: 1.0 }],
-      }
+      throw new DataInsufficientError(1, 0)
     }
 
     const data = rows[0]
@@ -344,11 +407,16 @@ export async function predictCustomerChurn(
       factors,
     }
   } catch (error) {
-    console.error("Error predicting customer churn:", error)
-    return {
-      churnProbability: 0.5,
-      riskLevel: "medium",
-      factors: [{ factor: "Error in prediction", impact: 1.0 }],
+    if (error instanceof PredictiveAnalyticsError) {
+      console.error(`Customer Churn Prediction Error [${error.code}]:`, error.message, error.context)
+      throw error
     }
+
+    console.error("Error predicting customer churn:", error)
+    throw new PredictiveAnalyticsError("Failed to predict customer churn", "CHURN_PREDICTION_FAILED", {
+      orgId,
+      clientId,
+      originalError: error.message,
+    })
   }
 }
