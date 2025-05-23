@@ -1,6 +1,10 @@
 import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
-import { requireAuth, requireOrgRole } from "./utils/auth"
+import { requireAuth, requirePermission } from "./utils/auth"
+import { Permission } from "@/lib/permissions/permission-types"
+import { validateWithZod } from "./utils/validation"
+import { createClientSchema, updateClientSchema, deleteClientSchema } from "./schemas/client-schemas"
+import { ConvexError } from "convex/server"
 
 // Query to get all clients for the current organization
 export const getClients = query({
@@ -11,7 +15,8 @@ export const getClients = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // Get the auth context (including orgId)
+    // Get the auth context and check permission
+    await requirePermission(ctx, Permission.VIEW_CLIENTS)
     const { orgId } = await requireAuth(ctx)
 
     // Start with a query filtered by the current organization
@@ -56,7 +61,8 @@ export const getClients = query({
 export const getClient = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
-    // Get the auth context (including orgId)
+    // Get the auth context and check permission
+    await requirePermission(ctx, Permission.VIEW_CLIENTS)
     const { orgId } = await requireAuth(ctx)
 
     // Get the client
@@ -64,7 +70,10 @@ export const getClient = query({
 
     // Verify that the client exists and belongs to the current organization
     if (!client || client.orgId !== orgId) {
-      throw new Error("Client not found or access denied")
+      throw new ConvexError({
+        code: 404,
+        message: "Client not found or access denied",
+      })
     }
 
     return client
@@ -84,24 +93,38 @@ export const createClient = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Get the auth context (including orgId and userId)
-    const { orgId, userId } = await requireAuth(ctx)
+    // Get the auth context and check permission
+    await requirePermission(ctx, Permission.CREATE_CLIENTS)
+    const { userId, orgId } = await requireAuth(ctx)
+
+    // Validate input data
+    const validatedData = validateWithZod(createClientSchema, args)
 
     // Create the client
     const clientId = await ctx.db.insert("clients", {
-      name: args.name,
-      email: args.email || "",
-      phone: args.phone || "",
-      address: args.address || "",
-      city: args.city || "",
-      state: args.state || "",
-      zipCode: args.zipCode || "",
-      notes: args.notes || "",
+      name: validatedData.name,
+      email: validatedData.email || "",
+      phone: validatedData.phone || "",
+      address: validatedData.address || "",
+      city: validatedData.city || "",
+      state: validatedData.state || "",
+      zipCode: validatedData.zipCode || "",
+      notes: validatedData.notes || "",
       status: "active",
       orgId, // Always include orgId for data isolation
       createdBy: userId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+    })
+
+    // Log the action
+    await ctx.db.insert("auditLogs", {
+      orgId,
+      userId,
+      action: "createClient",
+      resourceType: "client",
+      resourceId: clientId,
+      createdAt: Date.now(),
     })
 
     return clientId
@@ -123,29 +146,46 @@ export const updateClient = mutation({
     status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Get the auth context (including orgId)
-    const { orgId } = await requireAuth(ctx)
+    // Get the auth context and check permission
+    await requirePermission(ctx, Permission.EDIT_CLIENTS)
+    const { userId, orgId } = await requireAuth(ctx)
+
+    // Validate input data
+    const validatedData = validateWithZod(updateClientSchema, args)
 
     // Get the client
     const client = await ctx.db.get(args.clientId)
 
     // Verify that the client exists and belongs to the current organization
     if (!client || client.orgId !== orgId) {
-      throw new Error("Client not found or access denied")
+      throw new ConvexError({
+        code: 404,
+        message: "Client not found or access denied",
+      })
     }
 
     // Update the client
     await ctx.db.patch(args.clientId, {
-      ...(args.name !== undefined && { name: args.name }),
-      ...(args.email !== undefined && { email: args.email }),
-      ...(args.phone !== undefined && { phone: args.phone }),
-      ...(args.address !== undefined && { address: args.address }),
-      ...(args.city !== undefined && { city: args.city }),
-      ...(args.state !== undefined && { state: args.state }),
-      ...(args.zipCode !== undefined && { zipCode: args.zipCode }),
-      ...(args.notes !== undefined && { notes: args.notes }),
-      ...(args.status !== undefined && { status: args.status }),
+      ...(validatedData.name !== undefined && { name: validatedData.name }),
+      ...(validatedData.email !== undefined && { email: validatedData.email }),
+      ...(validatedData.phone !== undefined && { phone: validatedData.phone }),
+      ...(validatedData.address !== undefined && { address: validatedData.address }),
+      ...(validatedData.city !== undefined && { city: validatedData.city }),
+      ...(validatedData.state !== undefined && { state: validatedData.state }),
+      ...(validatedData.zipCode !== undefined && { zipCode: validatedData.zipCode }),
+      ...(validatedData.notes !== undefined && { notes: validatedData.notes }),
+      ...(validatedData.status !== undefined && { status: validatedData.status }),
       updatedAt: Date.now(),
+    })
+
+    // Log the action
+    await ctx.db.insert("auditLogs", {
+      orgId,
+      userId,
+      action: "updateClient",
+      resourceType: "client",
+      resourceId: args.clientId,
+      createdAt: Date.now(),
     })
 
     return args.clientId
@@ -156,19 +196,49 @@ export const updateClient = mutation({
 export const deleteClient = mutation({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
-    // Get the auth context (including orgId) and require admin role
-    const { orgId } = await requireOrgRole(ctx, ["admin"])
+    // Get the auth context and check permission
+    await requirePermission(ctx, Permission.DELETE_CLIENTS)
+    const { userId, orgId } = await requireAuth(ctx)
+
+    // Validate input data
+    const validatedData = validateWithZod(deleteClientSchema, { clientId: args.clientId })
 
     // Get the client
     const client = await ctx.db.get(args.clientId)
 
     // Verify that the client exists and belongs to the current organization
     if (!client || client.orgId !== orgId) {
-      throw new Error("Client not found or access denied")
+      throw new ConvexError({
+        code: 404,
+        message: "Client not found or access denied",
+      })
+    }
+
+    // Check if client has any vehicles
+    const vehicles = await ctx.db
+      .query("vehicles")
+      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .first()
+
+    if (vehicles) {
+      throw new ConvexError({
+        code: 400,
+        message: "Cannot delete client with associated vehicles. Please delete the vehicles first.",
+      })
     }
 
     // Delete the client
     await ctx.db.delete(args.clientId)
+
+    // Log the action
+    await ctx.db.insert("auditLogs", {
+      orgId,
+      userId,
+      action: "deleteClient",
+      resourceType: "client",
+      resourceId: args.clientId,
+      createdAt: Date.now(),
+    })
 
     return args.clientId
   },

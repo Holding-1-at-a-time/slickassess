@@ -1,22 +1,37 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Upload, X, ImageIcon, Loader2 } from "lucide-react"
 import { handleError } from "@/lib/error-handling"
 import { toast } from "@/components/ui/use-toast"
+import { OptimizedImage } from "@/components/optimized-image"
+import { compressImage } from "@/lib/image/image-processor"
 
 interface ImageUploaderProps {
   onUploadComplete: (urls: string[]) => void
   maxImages?: number
+  maxSizeInMB?: number
+  acceptedFormats?: string[]
+  autoCompress?: boolean
+  compressQuality?: number
+  maxWidth?: number
 }
 
-export function ImageUploader({ onUploadComplete, maxImages = 5 }: ImageUploaderProps) {
+export function ImageUploader({
+  onUploadComplete,
+  maxImages = 5,
+  maxSizeInMB = 10,
+  acceptedFormats = ["image/jpeg", "image/png", "image/webp", "image/heic"],
+  autoCompress = true,
+  compressQuality = 0.8,
+  maxWidth = 1920,
+}: ImageUploaderProps) {
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -34,21 +49,70 @@ export function ImageUploader({ onUploadComplete, maxImages = 5 }: ImageUploader
     }
 
     setIsUploading(true)
+    const newProgressState: Record<string, number> = {}
+    const newUrls: string[] = []
 
     try {
-      const newUrls: string[] = []
-
       // Process each file
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
+        const fileId = `${file.name}-${Date.now()}`
+        newProgressState[fileId] = 0
+        setUploadProgress((prev) => ({ ...prev, [fileId]: 0 }))
 
-        // In a real app, you would upload to a storage service
-        // For this example, we'll create object URLs
-        const objectUrl = URL.createObjectURL(file)
-        newUrls.push(objectUrl)
+        // Check file size
+        if (file.size > maxSizeInMB * 1024 * 1024) {
+          if (!autoCompress) {
+            toast({
+              title: "File too large",
+              description: `${file.name} exceeds the maximum size of ${maxSizeInMB}MB.`,
+              variant: "destructive",
+            })
+            continue
+          }
 
-        // Simulate upload delay
-        await new Promise((resolve) => setTimeout(resolve, 500))
+          // Auto-compress large images
+          try {
+            const compressedFile = await compressImage(file, {
+              maxWidth,
+              quality: compressQuality,
+              maxSizeInMB,
+            })
+
+            // Replace the original file with the compressed one
+            Object.defineProperty(file, "size", {
+              value: compressedFile.size,
+              writable: false,
+            })
+
+            // Create a new object URL for the compressed file
+            const objectUrl = URL.createObjectURL(compressedFile)
+            newUrls.push(objectUrl)
+
+            // Update progress
+            setUploadProgress((prev) => ({ ...prev, [fileId]: 100 }))
+
+            toast({
+              title: "Image compressed",
+              description: `${file.name} was compressed from ${(file.size / (1024 * 1024)).toFixed(2)}MB to ${(compressedFile.size / (1024 * 1024)).toFixed(2)}MB.`,
+            })
+          } catch (error) {
+            console.error("Error compressing image:", error)
+            toast({
+              title: "Compression failed",
+              description: `Failed to compress ${file.name}. The file may be too large.`,
+              variant: "destructive",
+            })
+            continue
+          }
+        } else {
+          // File is within size limits, create object URL
+          const objectUrl = URL.createObjectURL(file)
+          newUrls.push(objectUrl)
+
+          // Update progress
+          setUploadProgress((prev) => ({ ...prev, [fileId]: 100 }))
+        }
       }
 
       // Update state with new images
@@ -64,6 +128,7 @@ export function ImageUploader({ onUploadComplete, maxImages = 5 }: ImageUploader
       handleError(error)
     } finally {
       setIsUploading(false)
+      setUploadProgress({})
     }
   }
 
@@ -79,11 +144,7 @@ export function ImageUploader({ onUploadComplete, maxImages = 5 }: ImageUploader
         {uploadedImages.map((url, index) => (
           <Card key={index} className="relative w-24 h-24 overflow-hidden">
             <CardContent className="p-0">
-              <img
-                src={url || "/placeholder.svg"}
-                alt={`Uploaded ${index + 1}`}
-                className="w-full h-full object-cover"
-              />
+              <OptimizedImage src={url} alt={`Uploaded ${index + 1}`} fill className="w-full h-full object-cover" />
               <button
                 type="button"
                 onClick={() => removeImage(index)}
@@ -120,7 +181,7 @@ export function ImageUploader({ onUploadComplete, maxImages = 5 }: ImageUploader
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
-        accept="image/*"
+        accept={acceptedFormats.join(",")}
         multiple
         className="hidden"
         disabled={isUploading || uploadedImages.length >= maxImages}
@@ -148,6 +209,7 @@ export function ImageUploader({ onUploadComplete, maxImages = 5 }: ImageUploader
       </Button>
       <p className="text-xs text-secondary mt-1">
         {uploadedImages.length} of {maxImages} images uploaded
+        {maxSizeInMB && ` (Max size: ${maxSizeInMB}MB${autoCompress ? ", auto-compression enabled" : ""})`}
       </p>
     </div>
   )

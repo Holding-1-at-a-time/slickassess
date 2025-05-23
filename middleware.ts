@@ -1,47 +1,77 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
+import { authMiddleware, clerkClient } from "@clerk/nextjs/server"
 import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
-import { THEME_COOKIE_NAME } from "./lib/theme"
+import { Permission, type Role, hasPermission } from "./lib/permissions/permission-types"
 
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
-  "/scan/(.*)",
-  "/api/webhooks/(.*)",
-  "/api/cron/(.*)",
-])
+// Map of routes to required permissions
+const ROUTE_PERMISSIONS: Record<string, Permission> = {
+  "/clients": Permission.VIEW_CLIENTS,
+  "/clients/new": Permission.CREATE_CLIENTS,
+  "/vehicles": Permission.VIEW_VEHICLES,
+  "/vehicles/new": Permission.CREATE_VEHICLES,
+  "/assessments": Permission.VIEW_ASSESSMENTS,
+  "/assessments/new": Permission.CREATE_ASSESSMENTS,
+  "/reports": Permission.VIEW_REPORTS,
+  "/analytics": Permission.VIEW_ANALYTICS,
+  "/settings/billing": Permission.VIEW_BILLING,
+  "/organization/members": Permission.INVITE_MEMBERS,
+  "/admin": Permission.MANAGE_ORGANIZATION,
+}
 
-export default clerkMiddleware((auth, req: NextRequest) => {
-  // Handle theme detection
-  const response = NextResponse.next()
+export default authMiddleware({
+  publicRoutes: ["/", "/api/webhooks(.*)", "/reports/shared/(.*)", "/reports/sign/(.*)", "/scan/(.*)"],
+  beforeAuth: (req) => {
+    // Handle CORS preflight requests
+    if (req.method === "OPTIONS") {
+      return NextResponse.next()
+    }
+  },
+  afterAuth: async (auth, req) => {
+    // If the user is authenticated and trying to access a protected route
+    if (auth.userId && auth.orgId) {
+      const path = req.nextUrl.pathname
 
-  // Check if theme cookie exists
-  const themeCookie = req.cookies.get(THEME_COOKIE_NAME)
+      // Check if the route requires specific permissions
+      const requiredPermission = Object.entries(ROUTE_PERMISSIONS).find(([route, _]) => {
+        if (route.endsWith("(.*)")) {
+          const baseRoute = route.replace("(.*)", "")
+          return path.startsWith(baseRoute)
+        }
+        return path === route || path.startsWith(`${route}/`)
+      })?.[1]
 
-  // If no theme cookie and it's a system theme request, detect from headers
-  if (!themeCookie && req.headers.get("sec-ch-prefers-color-scheme")) {
-    const prefersDark = req.headers.get("sec-ch-prefers-color-scheme") === "dark"
-    response.cookies.set(THEME_COOKIE_NAME, prefersDark ? "dark" : "light", {
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-      sameSite: "lax",
-    })
-  }
+      if (requiredPermission) {
+        try {
+          // Get the user's role in the organization
+          const membership = await clerkClient.organizations.getOrganizationMembership({
+            organizationId: auth.orgId,
+            userId: auth.userId,
+          })
 
-  // Protect private routes
-  if (!isPublicRoute(req)) {
-    auth().protect()
-  }
+          let role: Role = "viewer" // Default role
 
-  return response
+          if (membership.role === "org:admin") {
+            role = "admin"
+          } else if (membership.publicMetadata?.role) {
+            role = membership.publicMetadata.role as Role
+          }
+
+          // Check if the user has the required permission
+          if (!hasPermission(role, requiredPermission) && role !== "owner") {
+            // Redirect to dashboard if permission check fails
+            return NextResponse.redirect(new URL("/dashboard", req.url))
+          }
+        } catch (error) {
+          console.error("Error checking permissions:", error)
+          // Redirect to dashboard on error
+          return NextResponse.redirect(new URL("/dashboard", req.url))
+        }
+      }
+    }
+
+    return NextResponse.next()
+  },
 })
 
 export const config = {
-  matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // Always run for API routes
-    "/(api|trpc)(.*)",
-  ],
+  matcher: ["/((?!.*\\..*|_next).*)", "/(api|trpc)(.*)"],
 }
