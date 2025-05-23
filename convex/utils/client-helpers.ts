@@ -1,5 +1,19 @@
+/**
+    * @description      : 
+    * @author           : rrome
+    * @group            : 
+    * @created          : 22/05/2025 - 22:25:53
+    * 
+    * MODIFICATION LOG
+    * - Version         : 1.0.0
+    * - Date            : 22/05/2025
+    * - Author          : rrome
+    * - Modification    : 
+**/
+
 import type { DatabaseWriter, MutationCtx } from "../_generated/server"
 import type { Id } from "../_generated/dataModel"
+import { v } from "convex/values";
 
 // Constant for public submissions
 export const PUBLIC_CLERK_ID = "public-submission"
@@ -112,10 +126,18 @@ export async function createAssessment(
 ): Promise<Id<"assessments">> {
   // Create findings array based on assessment info
   const findings = []
-  if (assessmentInfo.hasScratches) findings.push("Scratches/paint damage")
-  if (assessmentInfo.hasDents) findings.push("Dents/body damage")
-  if (assessmentInfo.hasRust) findings.push("Rust/corrosion")
-  if (assessmentInfo.hasInteriorDamage) findings.push("Interior damage")
+  if (assessmentInfo.hasScratches) {
+    findings.push("Scratches/paint damage")
+  }
+  if (assessmentInfo.hasDents) {
+    findings.push("Dents/body damage")
+  }
+  if (assessmentInfo.hasRust) {
+    findings.push("Rust/corrosion")
+  }
+  if (assessmentInfo.hasInteriorDamage) {
+    findings.push("Interior damage")
+  }
 
   return ctx.insert("assessments", {
     vehicleId,
@@ -144,15 +166,17 @@ export async function storeImages(
   // Use Promise.all for parallel image insertion
   await Promise.all(
     imageUrls.map((imageUrl) =>
-      ctx.insert("images", {
+      ctx.insert("vehicleImages", {
         orgId,
         createdBy: PUBLIC_CLERK_ID,
-        imageUrl,
+        url: imageUrl,
         vehicleId,
         assessmentId,
         category: "qr-submission",
         tags: ["qr-code", "self-assessment"],
+        isPrimary: false,
         createdAt: now,
+        clerkId: PUBLIC_CLERK_ID,
       }),
     ),
   )

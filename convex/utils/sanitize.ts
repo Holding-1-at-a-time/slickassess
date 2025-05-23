@@ -1,4 +1,18 @@
 /**
+    * @description      : 
+    * @author           : rrome
+    * @group            : 
+    * @created          : 22/05/2025 - 22:26:26
+    * 
+    * MODIFICATION LOG
+    * - Version         : 1.0.0
+    * - Date            : 22/05/2025
+    * - Author          : rrome
+    * - Modification    : 
+**/
+"use node"
+
+/**
  * Utility functions for sanitizing user inputs to prevent security issues
  */
 

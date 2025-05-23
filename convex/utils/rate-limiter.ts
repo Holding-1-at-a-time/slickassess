@@ -1,5 +1,18 @@
+/**
+    * @description      : 
+    * @author           : rrome
+    * @group            : 
+    * @created          : 22/05/2025 - 22:26:07
+    * 
+    * MODIFICATION LOG
+    * - Version         : 1.0.0
+    * - Date            : 22/05/2025
+    * - Author          : rrome
+    * - Modification    : 
+**/
 import { v } from "convex/values"
 import { query } from "../_generated/server"
+
 
 /**
  * Rate limiting configuration
@@ -74,8 +87,8 @@ export async function checkRateLimit(
   // Get recent requests for this identifier and action
   const requests = await ctx.db
     .query("rateLimits")
-    .withIndex("by_identifier_action_timestamp", (q) =>
-      q.eq("identifier", identifier).eq("action", action).gt("timestamp", windowStart),
+    .withIndex("by_identifier_and_action", (q: any) =>
+      q.eq("identifier", identifier).eq("action", action).gt("windowStart", windowStart),
     )
     .collect()
 
@@ -96,7 +109,9 @@ export async function recordRequest(ctx: any, identifier: string, action: string
   const id = await ctx.db.insert("rateLimits", {
     identifier,
     action,
-    timestamp: now,
+    count: 1,
+    windowStart: now,
+    expiresAt: now + 24 * 60 * 60 * 1000, // 1 day expiry (adjust as needed)
   })
 
   // Clean up old records (optional, but helps keep the table size manageable)
@@ -104,7 +119,7 @@ export async function recordRequest(ctx: any, identifier: string, action: string
   const oneDayAgo = now - 24 * 60 * 60 * 1000
   const oldRecords = await ctx.db
     .query("rateLimits")
-    .withIndex("by_timestamp", (q) => q.lt("timestamp", oneDayAgo))
+    .withIndex("by_expiresAt", (q: any) => q.lt("expiresAt", oneDayAgo))
     .take(100)
     .collect()
 
@@ -135,9 +150,9 @@ export const getRateLimitStatus = query({
 
     // Get recent requests for this identifier and action
     const requests = await ctx.db
-      .query("rateLimits")
-      .withIndex("by_identifier_action_timestamp", (q) =>
-        q.eq("identifier", identifier).eq("action", action).gt("timestamp", windowStart),
+      .query("rateLimits") // <-- Make sure the table name matches your schema exactly (case sensitive)
+      .withIndex("by_identifier_and_action", (q: any) =>
+        q.eq("identifier", identifier).eq("action", action).gt("windowStart", windowStart),
       )
       .collect()
 
@@ -147,9 +162,9 @@ export const getRateLimitStatus = query({
     // Calculate reset time (when the oldest request will expire from the window)
     let resetTime = now + config.windowMs
     if (requests.length > 0) {
-      // Sort by timestamp ascending to get the oldest request
-      requests.sort((a, b) => a.timestamp - b.timestamp)
-      resetTime = requests[0].timestamp + config.windowMs
+      // Sort by windowStart ascending to get the oldest request
+      requests.sort((a, b) => a.windowStart - b.windowStart)
+      resetTime = requests[0].windowStart + config.windowMs
     }
 
     return {

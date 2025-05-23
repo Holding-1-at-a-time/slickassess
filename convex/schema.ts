@@ -1,9 +1,25 @@
+/**
+    * @description      : 
+    * @author           : rrome
+    * @group            : 
+    * @created          : 22/05/2025 - 22:32:30
+    * 
+    * MODIFICATION LOG
+    * - Version         : 1.0.0
+    * - Date            : 22/05/2025
+    * - Author          : rrome
+    * - Modification    : 
+**/
+import { metadata } from "@/app/layout"
+import { Organization } from "@clerk/nextjs/server"
 import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
 export default defineSchema({
   // Users table (for additional user data beyond what Clerk provides)
   users: defineTable({
+    orgId: v.id("organizations"),
+    image: v.string(),
     clerkId: v.string(),
     email: v.string(),
     name: v.optional(v.string()),
@@ -32,7 +48,7 @@ export default defineSchema({
   })
     .index("by_orgId", ["orgId"]) // Primary index for data isolation
     .index("by_orgId_and_name", ["orgId", "name"]) // For searching by name within org
-    .index("by_orgId_and_email", ["orgId", "email"], { unique: true }), // Unique index to prevent duplicates
+    .index("by_orgId_and_email", ["orgId", "email"]), // Unique index to prevent duplicates
 
   // Vehicles table
   vehicles: defineTable({
@@ -66,11 +82,13 @@ export default defineSchema({
   // Vehicle Images table
   vehicleImages: defineTable({
     vehicleId: v.id("vehicles"),
+    assessmentId: v.id("assessments"),
     url: v.string(),
     category: v.string(), // "exterior", "interior", "damage", etc.
     position: v.optional(v.string()), // "front", "rear", "side", etc.
     tags: v.optional(v.array(v.string())),
     isPrimary: v.boolean(),
+    createdBy: v.string(),
     orgId: v.string(), // Clerk organization ID - CRITICAL for data isolation
     clerkId: v.string(), // Clerk user ID who created this
     createdAt: v.number(), // Timestamp
@@ -522,7 +540,33 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_activeQrSlug", ["activeQrSlug"]),
 
-  // Rate limiting table
+  // QR Code slugs table
+  qrSlugs: defineTable({
+    slug: v.string(),
+    active: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_active", ["active"]),
+
+  Organization: defineTable({
+    id: v.string(),
+    name: v.string(),
+    role: v.string(),
+    slug: v.string(),
+    image: v.optional(v.string()),
+    metadata: v.optional(v.object({})),
+    permisions: v.object({}),
+  })
+    .index("by_id", ["id"])
+    .index("by_slug", ["slug"])
+    .index("by_name", ["name"])
+    .index("by_role", ["role"])
+    .index("by_image", ["image"])
+    .index("by_metadata", ["metadata"])
+    .index("by_permisions", ["permisions"]),
+
+// Rate limiting table
   rateLimits: defineTable({
     identifier: v.string(), // IP address or other identifier
     action: v.string(), // The action being rate limited (e.g., "publicAssessment", "imageUpload")
@@ -702,3 +746,6 @@ export default defineSchema({
     .index("by_orgId_and_date", ["orgId", "date"])
     .index("by_date", ["date"]), // For cleanup
 })
+    .index("by_expiresAt", ["expiresAt"]) // For cleanup
+    .index("by_windowStart", ["windowStart"]),// For cleanup
+

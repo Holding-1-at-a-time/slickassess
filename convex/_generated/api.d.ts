@@ -13,6 +13,7 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as actions_generate_qr_code from "../actions/generate-qr-code.js";
 import type * as admin from "../admin.js";
 import type * as ai_training from "../ai-training.js";
 import type * as analytics from "../analytics.js";
@@ -24,13 +25,19 @@ import type * as calendarEvents from "../calendarEvents.js";
 import type * as calendarIntegration from "../calendarIntegration.js";
 import type * as clients from "../clients.js";
 import type * as images from "../images.js";
+import type * as leads from "../leads.js";
 import type * as notificationTemplates from "../notificationTemplates.js";
 import type * as notifications from "../notifications.js";
+import type * as publicAssessments from "../publicAssessments.js";
 import type * as reports from "../reports.js";
 import type * as scheduled_jobs from "../scheduled-jobs.js";
 import type * as settings from "../settings.js";
+import type * as tenants from "../tenants.js";
 import type * as userClientPreferences from "../userClientPreferences.js";
 import type * as utils_auth from "../utils/auth.js";
+import type * as utils_client_helpers from "../utils/client-helpers.js";
+import type * as utils_rate_limiter from "../utils/rate-limiter.js";
+import type * as utils_sanitize from "../utils/sanitize.js";
 import type * as vehicles from "../vehicles.js";
 
 /**
@@ -42,6 +49,7 @@ import type * as vehicles from "../vehicles.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  "actions/generate-qr-code": typeof actions_generate_qr_code;
   admin: typeof admin;
   "ai-training": typeof ai_training;
   analytics: typeof analytics;
@@ -53,13 +61,19 @@ declare const fullApi: ApiFromModules<{
   calendarIntegration: typeof calendarIntegration;
   clients: typeof clients;
   images: typeof images;
+  leads: typeof leads;
   notificationTemplates: typeof notificationTemplates;
   notifications: typeof notifications;
+  publicAssessments: typeof publicAssessments;
   reports: typeof reports;
   "scheduled-jobs": typeof scheduled_jobs;
   settings: typeof settings;
+  tenants: typeof tenants;
   userClientPreferences: typeof userClientPreferences;
   "utils/auth": typeof utils_auth;
+  "utils/client-helpers": typeof utils_client_helpers;
+  "utils/rate-limiter": typeof utils_rate_limiter;
+  "utils/sanitize": typeof utils_sanitize;
   vehicles: typeof vehicles;
 }>;
 export declare const api: FilterApi<
