@@ -1,30 +1,98 @@
 import { NextResponse } from "next/server"
+import Stripe from "stripe"
 import { requireEnv } from "@/utils/env"
 
+// Initialize Stripe with requireEnv
+const stripe = new Stripe(requireEnv("STRIPE_SECRET_KEY"), {
+  apiVersion: "2023-10-16",
+})
+
+// Define our pricing plans with metadata using requireEnv
 const PRICING_PLANS = [
   {
+    id: "price_basic",
     name: "Basic",
-    description: "Essential features to get started.",
-    price: "$19",
+    description: "Perfect for small teams getting started",
+    price: 4900, // $49.00 in cents
+    interval: "month",
+    features: [
+      "Up to 50 assessments per month",
+      "Basic damage detection",
+      "Email notifications",
+      "30-day data retention",
+      "Standard support",
+    ],
     stripePriceId: requireEnv("STRIPE_BASIC_PRICE_ID"),
-    features: ["Feature 1", "Feature 2", "Feature 3"],
   },
   {
-    name: "Pro",
-    description: "Advanced tools for growing teams.",
-    price: "$49",
+    id: "price_pro",
+    name: "Professional",
+    description: "Best for growing businesses",
+    price: 9900, // $99.00 in cents
+    interval: "month",
+    features: [
+      "Up to 200 assessments per month",
+      "Advanced damage detection",
+      "Email & SMS notifications",
+      "90-day data retention",
+      "Priority support",
+      "Custom branding",
+    ],
     stripePriceId: requireEnv("STRIPE_PRO_PRICE_ID"),
-    features: ["All Basic features", "Feature 4", "Feature 5"],
+    popular: true,
   },
   {
+    id: "price_enterprise",
     name: "Enterprise",
-    description: "Custom solutions for large organizations.",
-    price: "Contact Us",
+    description: "For large organizations with advanced needs",
+    price: 19900, // $199.00 in cents
+    interval: "month",
+    features: [
+      "Unlimited assessments",
+      "Premium damage detection",
+      "All notification channels",
+      "1-year data retention",
+      "24/7 priority support",
+      "Custom integrations",
+      "Dedicated account manager",
+      "Advanced analytics",
+    ],
     stripePriceId: requireEnv("STRIPE_ENTERPRISE_PRICE_ID"),
-    features: ["All Pro features", "Dedicated support", "Custom integrations"],
   },
 ]
 
 export async function GET() {
-  return NextResponse.json(PRICING_PLANS)
+  try {
+    // In a real implementation, you might want to fetch live pricing from Stripe
+    // For now, we'll return our predefined plans
+
+    // Optionally validate that the Stripe price IDs exist
+    const validatedPlans = await Promise.all(
+      PRICING_PLANS.map(async (plan) => {
+        if (plan.stripePriceId) {
+          try {
+            const stripePrice = await stripe.prices.retrieve(plan.stripePriceId)
+            return {
+              ...plan,
+              stripePrice: {
+                id: stripePrice.id,
+                unit_amount: stripePrice.unit_amount,
+                currency: stripePrice.currency,
+                recurring: stripePrice.recurring,
+              },
+            }
+          } catch (error) {
+            console.warn(`Failed to validate Stripe price ${plan.stripePriceId}:`, error)
+            return plan
+          }
+        }
+        return plan
+      }),
+    )
+
+    return NextResponse.json({ plans: validatedPlans })
+  } catch (error) {
+    console.error("Error fetching pricing plans:", error)
+    return new NextResponse("Internal Server Error", { status: 500 })
+  }
 }

@@ -1,27 +1,56 @@
-export async function getTopClientsByRevenue(invoices: any[]): Promise<{ clientId: string; revenue: number }[]> {
-  const revenueByClient = new Map<string, number>()
+import { query } from "./_generated/server"
+import { v } from "convex/values"
+import { requireOrgRole } from "./roles"
 
-  // Sum revenue per client (filter out invoices without clientId)
-  for (const invoice of invoices) {
-    const clientId = invoice.clientId
-    if (!clientId) {
-      console.warn(`Invoice ${invoice._id} has no clientId, skipping from revenue analytics`)
-      continue
+// Fix for handling undefined/null clientId in revenue calculations
+export const getTopClientsByRevenue = query({
+  args: {
+    orgId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = requireOrgRole(ctx, args.orgId, ["admin"])
+    const limit = args.limit || 5
+
+    // Get all invoices for this organization
+    const invoices = await ctx.db
+      .query("invoices")
+      .withIndex("by_orgId_createdAt", (q) => q.eq("orgId", orgId))
+      .collect()
+
+    // Group by client
+    const revenueByClient = new Map()
+
+    // Sum revenue per client - explicitly filter out undefined/null clientIds
+    for (const invoice of invoices) {
+      const clientId = invoice.clientId
+      // Skip invoices without a valid clientId
+      if (!clientId) {
+        console.warn(`Invoice ${invoice._id} has no clientId, skipping from revenue analytics`)
+        continue
+      }
+      const currentRevenue = revenueByClient.get(clientId) || 0
+      revenueByClient.set(clientId, currentRevenue + invoice.amount)
     }
-    const currentRevenue = revenueByClient.get(clientId) || 0
-    revenueByClient.set(clientId, currentRevenue + invoice.amount)
-  }
 
-  // Convert map to array of objects for sorting
-  const clientRevenueList: { clientId: string; revenue: number }[] = Array.from(revenueByClient.entries()).map(
-    ([clientId, revenue]) => ({
-      clientId,
-      revenue,
-    }),
-  )
+    // Convert to array and sort by revenue
+    const sortedClients = Array.from(revenueByClient.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
 
-  // Sort by revenue in descending order
-  clientRevenueList.sort((a, b) => b.revenue - a.revenue)
+    // Get client details
+    const result = []
+    for (const [clientId, revenue] of sortedClients) {
+      const client = await ctx.db.get(clientId)
+      if (client) {
+        result.push({
+          clientId,
+          name: client.name,
+          revenue,
+        })
+      }
+    }
 
-  return clientRevenueList
-}
+    return result
+  },
+})

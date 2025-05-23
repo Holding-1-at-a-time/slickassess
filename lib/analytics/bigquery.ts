@@ -1,6 +1,7 @@
 import { BigQuery } from "@google-cloud/bigquery"
 import fs from "fs"
 import path from "path"
+import { requireEnv } from "@/utils/env"
 
 // Path to the fallback file
 const FALLBACK_FILE_PATH = path.resolve(process.cwd(), "bigquery-fallback.jsonl")
@@ -23,17 +24,32 @@ function persistFailedEvent(dataset: string, table: string, event: Record<string
   }
 }
 
+// Initialize BigQuery client
 let bigqueryClient: BigQuery | null = null
 
-async function getBigQueryClient() {
-  if (bigqueryClient) {
-    return bigqueryClient
+// Get BigQuery client with connection pooling
+export function getBigQueryClient(): BigQuery {
+  if (!bigqueryClient) {
+    try {
+      // Check if credentials are available
+      const credentials = requireEnv("GCP_CREDENTIALS_JSON")
+      const projectId = requireEnv("GCP_PROJECT_ID")
+
+      // Initialize BigQuery client
+      bigqueryClient = new BigQuery({
+        projectId,
+        credentials: JSON.parse(credentials),
+      })
+    } catch (error) {
+      console.error("Error initializing BigQuery client:", error)
+      throw error
+    }
   }
 
-  bigqueryClient = new BigQuery()
   return bigqueryClient
 }
 
+// Log an event to BigQuery with retry logic
 export async function logEvent(
   dataset: string,
   table: string,
@@ -41,8 +57,16 @@ export async function logEvent(
   retries = 3,
 ): Promise<boolean> {
   try {
-    const bigquery = await getBigQueryClient()
-    await bigquery.dataset(dataset).table(table).insert([event])
+    const client = getBigQueryClient()
+
+    // Add timestamp if not present
+    if (!event.timestamp) {
+      event.timestamp = new Date().toISOString()
+    }
+
+    // Insert row into BigQuery
+    await client.dataset(dataset).table(table).insert([event])
+
     return true
   } catch (error) {
     console.error(`Error logging event to BigQuery (attempt ${4 - retries}/3):`, error)

@@ -41,8 +41,6 @@ export const submitSignature = mutation({
       .filter((q) => q.eq(q.field("reportNumber"), args.reportId))
       .collect()
 
-    const orgId = reports.length > 0 ? reports[0].orgId : "unknown"
-
     if (reports.length > 0) {
       await ctx.db.patch(reports[0]._id, {
         signatureId,
@@ -52,7 +50,7 @@ export const submitSignature = mutation({
 
     // Create audit log
     await ctx.db.insert("auditLogs", {
-      orgId,
+      orgId: reports[0]?.orgId || "unknown",
       clerkId: "customer", // Customer signature
       action: "submitSignature",
       resourceType: "signature",

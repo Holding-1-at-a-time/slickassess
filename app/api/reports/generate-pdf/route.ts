@@ -315,7 +315,6 @@ export async function POST(req: NextRequest) {
         // Check if we need a new page
         if (y2Position < 100) {
           const newPage = pdfDoc.addPage([612, 792])
-          page2 = newPage
           y2Position = height - 50
         }
       })
