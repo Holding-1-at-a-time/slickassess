@@ -5,6 +5,10 @@ import { MODELS, PROMPTS } from "@/lib/ai/ai-sdk-config"
 import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
 import { v4 as uuidv4 } from "uuid"
+import { validateRequestAsync } from "@/lib/validation/api-validator"
+import { analyzeVehicleImageSchema } from "@/lib/validation/schemas"
+import { logger } from "@/lib/logging/logger"
+import { validateCsrfToken } from "@/lib/security/csrf"
 
 // Create a Convex client for server-side API calls
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
@@ -22,16 +26,33 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Parse JSON body
-    const { imageUrl, imageId, vehicleId, assessmentId, analysisType } = await req.json()
-
-    if (!imageUrl || !imageId || !vehicleId) {
-      return NextResponse.json({ error: "Image URL, image ID, and vehicle ID are required" }, { status: 400 })
+    // Validate CSRF token
+    const csrfValidation = await validateCsrfToken(req)
+    if (!csrfValidation.valid) {
+      logger.warn({ reason: csrfValidation.reason }, "CSRF validation failed")
+      return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 })
     }
 
-    if (!["exterior", "interior"].includes(analysisType)) {
-      return NextResponse.json({ error: "Analysis type must be 'exterior' or 'interior'" }, { status: 400 })
+    // Validate request body
+    const validation = await validateRequestAsync(req, {
+      schema: analyzeVehicleImageSchema,
+      source: "body",
+    })
+
+    if (!validation.success) {
+      return NextResponse.json(
+        {
+          error: "Validation Error",
+          details: validation.error.errors.map((err) => ({
+            path: err.path.join("."),
+            message: err.message,
+          })),
+        },
+        { status: 400 },
+      )
     }
+
+    const { imageUrl, imageId, vehicleId, assessmentId, analysisType } = validation.data
 
     // Get a JWT token for Convex authentication
     const token = await auth().getToken({ template: "convex" })
@@ -127,6 +148,18 @@ export async function POST(req: NextRequest) {
       { authorization: `Bearer ${token}` },
     )
 
+    logger.info(
+      {
+        userId,
+        orgId,
+        vehicleId,
+        imageId,
+        analysisType,
+        annotationCount: annotations.length,
+      },
+      "Vehicle image analysis completed",
+    )
+
     return NextResponse.json({
       success: true,
       message: `Vehicle ${analysisType} analysis completed`,
@@ -134,7 +167,16 @@ export async function POST(req: NextRequest) {
       annotations,
     })
   } catch (error: any) {
-    console.error(`Error analyzing vehicle ${req.body?.analysisType || "image"}:`, error)
+    logger.error(
+      {
+        error,
+        userId,
+        orgId,
+        analysisType: req.body?.analysisType,
+      },
+      "Error analyzing vehicle image",
+    )
+
     return NextResponse.json(
       {
         error: error.message || `Failed to analyze vehicle image`,

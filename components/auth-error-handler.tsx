@@ -1,57 +1,117 @@
 "use client"
 
-import { useEffect } from "react"
+import type React from "react"
+
+import { useEffect, useState } from "react"
+import { useAuth, useClerk } from "@clerk/nextjs"
 import { useRouter } from "next/navigation"
-import { useAuth, useUser } from "@clerk/nextjs"
-import { toast } from "@/components/ui/use-toast"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { AlertTriangle, RefreshCw, LogIn } from "lucide-react"
+import { logger } from "@/lib/logging/logger"
 
-export function AuthErrorHandler() {
-  const { isLoaded, isSignedIn, signOut } = useAuth()
-  const { user, isLoaded: isUserLoaded } = useUser()
+interface AuthErrorHandlerProps {
+  children: React.ReactNode
+}
+
+export function AuthErrorHandler({ children }: AuthErrorHandlerProps) {
+  const { isLoaded, isSignedIn, sessionId } = useAuth()
+  const { session } = useClerk()
   const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [isRecovering, setIsRecovering] = useState(false)
 
+  // Monitor for session errors
   useEffect(() => {
-    if (!isLoaded || !isUserLoaded) return
+    if (!isLoaded) return
 
-    // Handle session expiration
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        // Check if the session is still valid when the user returns to the tab
-        if (isSignedIn && user) {
-          user.reload().catch((error) => {
-            console.error("Failed to reload user:", error)
-            // If reloading fails, sign out and redirect to login
-            signOut().then(() => {
-              toast({
-                title: "Session expired",
-                description: "Please sign in again to continue.",
-                variant: "destructive",
-              })
-              router.push("/sign-in")
-            })
-          })
+    // Check for session errors
+    const checkSession = async () => {
+      try {
+        if (session && sessionId) {
+          // Check if the session is active
+          const isActive = session.status === "active"
+
+          if (!isActive) {
+            setError("Your session is no longer active")
+          }
         }
+      } catch (err) {
+        logger.error({ err }, "Error checking session status")
+        setError("There was a problem with your authentication session")
       }
     }
 
-    document.addEventListener("visibilitychange", handleVisibilityChange)
+    checkSession()
 
-    // Handle network status changes
-    const handleOnline = () => {
-      if (isSignedIn && user) {
-        user.reload().catch((error) => {
-          console.error("Failed to reload user after coming online:", error)
-        })
+    // Set up interval to periodically check session
+    const interval = setInterval(checkSession, 60000) // Check every minute
+
+    return () => clearInterval(interval)
+  }, [isLoaded, session, sessionId])
+
+  // Handle session recovery
+  const recoverSession = async () => {
+    setIsRecovering(true)
+
+    try {
+      if (session) {
+        // Attempt to refresh the session
+        await session.touch()
+        setError(null)
+      } else {
+        // No session to recover, redirect to sign in
+        router.push("/sign-in")
       }
+    } catch (err) {
+      logger.error({ err }, "Error recovering session")
+      setError("Failed to recover your session. Please sign in again.")
+    } finally {
+      setIsRecovering(false)
     }
+  }
 
-    window.addEventListener("online", handleOnline)
+  // If there's an auth error, show the error UI
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-4 bg-gray-50 dark:bg-gray-900">
+        <Card className="w-full max-w-md border-red-200 shadow-lg">
+          <CardHeader className="bg-red-50 dark:bg-red-900/20">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <CardTitle className="text-red-700 dark:text-red-300">Authentication Error</CardTitle>
+            </div>
+            <CardDescription className="text-red-600/80 dark:text-red-400/80">{error}</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Your session may have expired or there was a problem with your authentication. You can try to recover your
+              session or sign in again.
+            </p>
+          </CardContent>
+          <CardFooter className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => router.push("/sign-in")}
+              className="text-gray-600 dark:text-gray-300"
+            >
+              <LogIn className="mr-2 h-4 w-4" />
+              Sign In Again
+            </Button>
+            <Button
+              onClick={recoverSession}
+              disabled={isRecovering}
+              className="bg-[#00ae98] hover:bg-[#00ae98]/90 text-white"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isRecovering ? "animate-spin" : ""}`} />
+              {isRecovering ? "Recovering..." : "Recover Session"}
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    )
+  }
 
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange)
-      window.removeEventListener("online", handleOnline)
-    }
-  }, [isLoaded, isSignedIn, user, isUserLoaded, signOut, router])
-
-  return null
+  // If everything is fine, render children
+  return <>{children}</>
 }

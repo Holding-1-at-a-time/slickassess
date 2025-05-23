@@ -1,8 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { setCsrfCookie } from "@/lib/security/csrf"
+import { getCsrfToken } from "@/lib/security/csrf"
+import { logger } from "@/lib/logging/logger"
 
 export async function GET(req: NextRequest) {
-  const token = setCsrfCookie()
+  try {
+    const token = await getCsrfToken()
 
-  return NextResponse.json({ token })
+    return NextResponse.json({ csrfToken: token })
+  } catch (error) {
+    logger.error({ error }, "Error in CSRF token generation")
+    return NextResponse.json({ error: "Failed to generate CSRF token" }, { status: 500 })
+  }
 }
