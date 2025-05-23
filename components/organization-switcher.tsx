@@ -32,7 +32,8 @@ import { CassetteLoader } from "./cassette-loader"
 export function OrganizationSwitcher() {
   const router = useRouter()
   const { organization } = useOrganization()
-  const { data: organizationList, setActive, isLoaded } = useOrganizationList()  const [isLoading, setIsLoading] = useState(false)
+  const { data: organizationList, setActive, isLoaded } = useOrganizationList();
+  const [isLoading, setIsLoading] = useState(false)
   const [isSwitching, setIsSwitching] = useState<string | null>(null)
 
   // Redirect to create org page if no orgs exist
