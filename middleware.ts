@@ -1,6 +1,7 @@
 import { authMiddleware, clerkClient } from "@clerk/nextjs/server"
-import { NextResponse } from "next/server"
+import { NextResponse, NextRequest } from "next/server"
 import { Permission, type Role, hasPermission } from "./lib/permissions/permission-types"
+import { createCsrfMiddleware } from "./lib/security/csrf"
 
 // Map of routes to required permissions
 const ROUTE_PERMISSIONS: Record<string, Permission> = {
@@ -19,11 +20,25 @@ const ROUTE_PERMISSIONS: Record<string, Permission> = {
 
 export default authMiddleware({
   publicRoutes: ["/", "/api/webhooks(.*)", "/reports/shared/(.*)", "/reports/sign/(.*)", "/scan/(.*)"],
-  beforeAuth: (req) => {
+  beforeAuth: async (req) => {
     // Handle CORS preflight requests
     if (req.method === "OPTIONS") {
       return NextResponse.next()
     }
+
+    // Apply CSRF protection
+    const csrfMiddleware = createCsrfMiddleware()
+    const csrfResult = await csrfMiddleware(req)
+
+    if (csrfResult instanceof NextResponse) {
+      return csrfResult
+    }
+
+    if (csrfResult instanceof NextRequest) {
+      req = csrfResult
+    }
+
+    return null
   },
   afterAuth: async (auth, req) => {
     // If the user is authenticated and trying to access a protected route

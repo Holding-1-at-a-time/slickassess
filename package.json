@@ -9,8 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@ai-sdk/google": "latest",
-    "@ai-sdk/openai": "latest",
     "@auth0/auth0-react": "latest",
     "@clerk/clerk-react": "latest",
     "@clerk/nextjs": "latest",
