@@ -148,10 +148,10 @@ export const getRateLimitStatus = query({
 
     // Get recent requests for this identifier and action
     const requests = await ctx.db
-      .query("rateLimits")
-    .withIndex("by_identifier_and_action", (q: any) =>
-      q.eq("identifier", identifier).eq("action", action).gt("timestamp", windowStart),
-    )
+      .query("rateLimits") // <-- Make sure the table name matches your schema exactly (case sensitive)
+      .withIndex("by_identifier_and_action", (q: any) =>
+        q.eq("identifier", identifier).eq("action", action).gt("windowStart", windowStart),
+      )
       .collect()
 
     // Check if rate limit is exceeded

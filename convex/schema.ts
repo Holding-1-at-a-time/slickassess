@@ -538,17 +538,17 @@ export default defineSchema({
     .index("by_role", ["role"])
     .index("by_image", ["image"])
     .index("by_metadata", ["metadata"])
-    .index("by_permisions", ["permisions"])
-})
+    .index("by_permisions", ["permisions"]),
 
 // Rate limiting table
-rateLimits: defineTable({
-  identifier: v.string(), // IP address or other identifier
-  action: v.string(), // The action being rate limited (e.g., "publicAssessment", "imageUpload")
-  count: v.number(), // Number of requests in the current window
-  windowStart: v.number(), // Start timestamp of the current window
-  expiresAt: v.number(), // When this record should be cleaned up
-})
-  .index("by_identifier_and_action", ["identifier", "action"])
-  .index("by_expiresAt", ["expiresAt"]) // For cleanup
-  .index("by_windowStart", ["windowStart"]) // For cleanup
+  rateLimits: defineTable({
+    identifier: v.string(), // IP address or other identifier
+    action: v.string(), // The action being rate limited (e.g., "publicAssessment", "imageUpload")
+    count: v.number(), // Number of requests in the current window
+    windowStart: v.number(), // Start timestamp of the current window
+    expiresAt: v.number(), // When this record should be cleaned up
+  })
+    .index("by_identifier_and_action", ["identifier", "action"])
+    .index("by_expiresAt", ["expiresAt"]) // For cleanup
+    .index("by_windowStart", ["windowStart"]); // For cleanup
+});
