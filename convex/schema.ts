@@ -486,9 +486,15 @@ export default defineSchema({
     eventData: v.object({}), // Flexible schema for different event types
     userId: v.optional(v.string()),
     timestamp: v.number(),
+    bigQueryLogged: v.optional(v.boolean()),
+    bigQueryLoggedAt: v.optional(v.number()),
+    bigQueryError: v.optional(v.boolean()),
+    bigQueryErrorAt: v.optional(v.number()),
   })
+    .index("by_orgId", ["orgId"])
     .index("by_orgId_eventType", ["orgId", "eventType"])
-    .index("by_orgId_timestamp", ["orgId", "timestamp"]),
+    .index("by_timestamp", ["timestamp"])
+    .index("by_bigQueryLogged", ["bigQueryLogged"]),
 
   // Tenants table
   tenants: defineTable({
