@@ -22,8 +22,13 @@ export async function GET(request: Request) {
     // Get auth token for Convex
     const authToken = await getToken({ template: "convex" })
 
+    // Validate NEXT_PUBLIC_CONVEX_URL environment variable
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!convexUrl) {
+      throw new Error("Environment variable NEXT_PUBLIC_CONVEX_URL is not defined.");
+    }
     // Initialize analytics dashboard
-    const dashboard = new AnalyticsDashboard(process.env.NEXT_PUBLIC_CONVEX_URL!, authToken)
+    const dashboard = new AnalyticsDashboard(convexUrl, authToken)
 
     // Parse query parameters
     const url = new URL(request.url)
