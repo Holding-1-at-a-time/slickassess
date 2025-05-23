@@ -1,62 +1,38 @@
 import { NextResponse } from "next/server"
-import { google } from "googleapis"
-import { requireEnv } from "../../../utils/env"
-import { ConvexHttpClient } from "convex/http"
+import { GoogleCalendarService } from "@/lib/calendar/google-calendar-service"
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  const code = searchParams.get("code")
-  const stateStr = searchParams.get("state")
-  if (!code || !stateStr) {
-    return NextResponse.json({ error: "Missing code or state" }, { status: 400 })
-  }
-
-  let state
   try {
-    state = JSON.parse(stateStr)
-  } catch (error) {
-    return NextResponse.json({ error: "Invalid state parameter" }, { status: 400 })
-  }
+    const { searchParams } = new URL(req.url)
+    const code = searchParams.get("code")
+    const state = searchParams.get("state")
+    const error = searchParams.get("error")
 
-  const { userId, orgId } = state
-  if (!userId || !orgId) {
-    return NextResponse.json({ error: "Missing userId or orgId in state" }, { status: 400 })
-  }
+    // Check for errors in the callback
+    if (error) {
+      console.error("Google Calendar authorization error:", error)
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/calendar?error=${error}`)
+    }
 
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/calendar/callback`
-  const clientId = requireEnv("GOOGLE_CLIENT_ID")
-  const clientSecret = requireEnv("GOOGLE_CLIENT_SECRET")
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
+    // Validate required parameters
+    if (!code || !state) {
+      console.error("Missing required parameters in Google Calendar callback")
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/calendar?error=missing_params`)
+    }
 
-  try {
+    // Initialize calendar service
+    const calendarService = new GoogleCalendarService(process.env.NEXT_PUBLIC_CONVEX_URL!)
+
     // Exchange code for tokens
-    const { tokens } = await oauth2Client.getToken(code)
-    const accessToken = tokens.access_token!
-    const refreshToken = tokens.refresh_token!
-    const expiryDate = tokens.expiry_date! // in ms
+    const result = await calendarService.exchangeCodeForTokens(code, state)
 
-    // Persist tokens to Convex
-    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!
-    const convexAdminKey = process.env.CONVEX_ADMIN_KEY!
-    const client = new ConvexHttpClient(convexUrl, convexAdminKey)
-
-    // Upsert calendarIntegration record
-    await client.mutation("calendarIntegration.upsert", {
-      userId,
-      orgId,
-      provider: "google",
-      accessToken,
-      refreshToken,
-      tokenExpiry: expiryDate,
-      calendarId: "primary", // Default to primary calendar
-      syncEnabled: true,
-      lastSynced: null,
-    })
-
-    // Redirect back to calendar page
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/calendar`)
+    if (result.success) {
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/calendar?success=true`)
+    } else {
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/calendar?error=exchange_failed`)
+    }
   } catch (error) {
-    console.error("Error exchanging code for tokens:", error)
-    return NextResponse.json({ error: "Failed to exchange code for tokens" }, { status: 500 })
+    console.error("Error in calendar callback:", error)
+    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/calendar?error=server_error`)
   }
 }
