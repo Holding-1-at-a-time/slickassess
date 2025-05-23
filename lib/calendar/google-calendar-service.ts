@@ -333,7 +333,7 @@ export class GoogleCalendarService {
       const updateData: any = {}
 
       if (eventData.title) {
-      if (eventData.description) updateData.description = eventData.description
+      if (eventData.description) {
       if (eventData.location) updateData.location = eventData.location
       if (eventData.startTime) {
         updateData.start = {
