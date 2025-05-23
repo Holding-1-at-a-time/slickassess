@@ -17,6 +17,7 @@
     "@clerk/themes": "latest",
     "@google-cloud/bigquery": "latest",
     "@hookform/resolvers": "latest",
+    "@jest/globals": "latest",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
     "@radix-ui/react-aspect-ratio": "1.1.1",

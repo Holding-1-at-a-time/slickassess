@@ -2,7 +2,27 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { ConvexError } from "convex/values"
 
-// Submit a new signature
+/**
+ * Submits a new digital signature for an assessment report.
+ *
+ * This mutation creates a signature record, updates the associated assessment report,
+ * and logs the action for audit purposes.
+ *
+ * @param args.reportId - The ID of the assessment report being signed
+ * @param args.approvalData - Signature approval data and status
+ * @param args.customerInfo - Customer information (name, email, phone)
+ * @param args.businessInfo - Optional business information for commercial clients
+ * @returns The ID of the created signature record
+ *
+ * @example
+ * ```typescript
+ * const signatureId = await submitSignature({
+ *   reportId: "RPT-2024-001",
+ *   approvalData: { status: "approved", signatureData: "..." },
+ *   customerInfo: { name: "John Doe", email: "john@example.com", phone: "555-0123" }
+ * });
+ * ```
+ */
 export const submitSignature = mutation({
   args: {
     reportId: v.string(),
@@ -63,7 +83,13 @@ export const submitSignature = mutation({
   },
 })
 
-// Get signature by ID
+/**
+ * Retrieves a digital signature by its ID.
+ *
+ * @param args.signatureId - The unique identifier of the signature
+ * @returns The signature record or throws an error if not found
+ * @throws {ConvexError} When signature is not found
+ */
 export const getSignatureById = query({
   args: {
     signatureId: v.id("digitalSignatures"),
@@ -77,7 +103,12 @@ export const getSignatureById = query({
   },
 })
 
-// Get signature by report ID
+/**
+ * Retrieves the most recent signature for a specific report.
+ *
+ * @param args.reportId - The report ID to search for
+ * @returns The most recent signature for the report, or null if none exists
+ */
 export const getSignatureByReportId = query({
   args: {
     reportId: v.string(),
@@ -93,7 +124,15 @@ export const getSignatureByReportId = query({
   },
 })
 
-// Get signatures for an organization
+/**
+ * Retrieves all signatures for an organization.
+ *
+ * This query first fetches all assessment reports for the organization,
+ * then finds all signatures associated with those reports.
+ *
+ * @param args.orgId - The organization ID
+ * @returns Array of signatures for the organization
+ */
 export const getSignaturesByOrg = query({
   args: {
     orgId: v.string(),
@@ -118,7 +157,15 @@ export const getSignaturesByOrg = query({
   },
 })
 
-// Update signature status
+/**
+ * Updates the status of an existing signature.
+ *
+ * @param args.signatureId - The ID of the signature to update
+ * @param args.status - The new status for the signature
+ * @param args.notes - Optional notes about the status change
+ * @returns True if successful
+ * @throws {ConvexError} When signature is not found
+ */
 export const updateSignatureStatus = mutation({
   args: {
     signatureId: v.id("digitalSignatures"),
@@ -141,7 +188,27 @@ export const updateSignatureStatus = mutation({
   },
 })
 
-// Get signature statistics
+/**
+ * Calculates signature statistics for an organization.
+ *
+ * Provides aggregate statistics including total signatures, approval rates,
+ * and status distribution within an optional date range.
+ *
+ * @param args.orgId - The organization ID
+ * @param args.startDate - Optional start date for filtering (timestamp)
+ * @param args.endDate - Optional end date for filtering (timestamp)
+ * @returns Signature statistics object
+ *
+ * @example
+ * ```typescript
+ * const stats = await getSignatureStats({
+ *   orgId: "org_123",
+ *   startDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // Last 30 days
+ *   endDate: Date.now()
+ * });
+ * console.log(`Approval rate: ${stats.approvalRate}%`);
+ * ```
+ */
 export const getSignatureStats = query({
   args: {
     orgId: v.string(),
@@ -191,7 +258,38 @@ export const getSignatureStats = query({
   },
 })
 
-// Get detailed signature analytics with optimized queries
+/**
+ * Retrieves detailed signature analytics with pagination support.
+ *
+ * This query provides comprehensive analytics data including daily activity,
+ * completion trends, and performance metrics. It supports pagination for
+ * handling large datasets efficiently.
+ *
+ * @param args.orgId - The organization ID
+ * @param args.startDate - Optional start date for filtering (timestamp)
+ * @param args.endDate - Optional end date for filtering (timestamp)
+ * @param args.limit - Maximum number of records to return (default: 100, max: 1000)
+ * @param args.cursor - Pagination cursor for retrieving next page
+ * @returns Analytics data with pagination information
+ *
+ * @example
+ * ```typescript
+ * const analytics = await getSignatureAnalytics({
+ *   orgId: "org_123",
+ *   startDate: Date.now() - 30 * 24 * 60 * 60 * 1000,
+ *   limit: 50
+ * });
+ *
+ * // Get next page if available
+ * if (analytics.pagination.hasMore) {
+ *   const nextPage = await getSignatureAnalytics({
+ *     orgId: "org_123",
+ *     cursor: analytics.pagination.nextCursor,
+ *     limit: 50
+ *   });
+ * }
+ * ```
+ */
 export const getSignatureAnalytics = query({
   args: {
     orgId: v.string(),
@@ -248,21 +346,18 @@ export const getSignatureAnalytics = query({
   },
 })
 
-// Helper function to get vehicle info for a report
-async function getVehicleInfoForReport(reportId: string) {
-  // Implement a proper lookup instead of random data
-  // This should query the database for the actual vehicle info
-  return `${Math.random() > 0.5 ? "2020 Toyota Camry" : "2019 Honda Civic"}`
-}
-
-// Helper function to calculate time to sign
-function calculateTimeToSign(signature: any) {
-  // Implement actual calculation based on created vs signed timestamps
-  // For now, returning a placeholder
-  return Math.random() * 72
-}
-
-// Helper function to generate daily activity data
+/**
+ * Generates daily activity data for signature analytics.
+ *
+ * Creates a day-by-day breakdown of signature activity including
+ * signatures sent and completed for each day in the specified range.
+ *
+ * @param signatures - Array of signature records
+ * @param startDate - Start date timestamp
+ * @param endDate - End date timestamp
+ * @returns Array of daily activity data
+ * @private
+ */
 function generateDailyActivity(signatures: any[], startDate: number, endDate: number) {
   const days = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000))
   const dailyData = []
@@ -287,7 +382,18 @@ function generateDailyActivity(signatures: any[], startDate: number, endDate: nu
   return dailyData
 }
 
-// Helper function to generate completion trend data
+/**
+ * Generates completion trend data for signature analytics.
+ *
+ * Calculates completion and approval rates over time to show
+ * trends in signature processing efficiency.
+ *
+ * @param signatures - Array of signature records
+ * @param startDate - Start date timestamp
+ * @param endDate - End date timestamp
+ * @returns Array of trend data with completion and approval rates
+ * @private
+ */
 function generateCompletionTrend(signatures: any[], startDate: number, endDate: number) {
   const days = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000))
   const trendData = []
@@ -316,51 +422,30 @@ function generateCompletionTrend(signatures: any[], startDate: number, endDate: 
   return trendData
 }
 
-// Helper function to generate time to sign distribution
-function generateTimeToSignDistribution(signatures: any[]) {
-  const ranges = [
-    { range: "< 1 hour", min: 0, max: 1 },
-    { range: "1-6 hours", min: 1, max: 6 },
-    { range: "6-24 hours", min: 6, max: 24 },
-    { range: "1-3 days", min: 24, max: 72 },
-    { range: "> 3 days", min: 72, max: Number.POSITIVE_INFINITY },
-  ]
-
-  return ranges.map((range) => ({
-    range: range.range,
-    count: Math.floor(Math.random() * 20), // Mock data - would calculate actual time differences
-  }))
-}
-
-// Helper function to generate top performers
-function generateTopPerformers(signatures: any[]) {
-  const customerPerformance = new Map()
-
-  signatures.forEach((sig) => {
-    const customerName = sig.customerInfo.name
-    if (!customerPerformance.has(customerName)) {
-      customerPerformance.set(customerName, {
-        customerName,
-        signaturesCount: 0,
-        totalTime: 0,
-      })
-    }
-
-    const perf = customerPerformance.get(customerName)
-    perf.signaturesCount++
-    perf.totalTime += Math.random() * 48 // Mock time data
-  })
-
-  return Array.from(customerPerformance.values())
-    .map((perf) => ({
-      ...perf,
-      averageTime: perf.totalTime / perf.signaturesCount,
-    }))
-    .sort((a, b) => a.averageTime - b.averageTime)
-    .slice(0, 10)
-}
-
-// Get signature completion funnel with optimized queries
+/**
+ * Retrieves signature completion funnel data with pagination.
+ *
+ * Provides funnel analysis showing the conversion rates from
+ * report generation through signature completion.
+ *
+ * @param args.orgId - The organization ID
+ * @param args.startDate - Optional start date for filtering
+ * @param args.endDate - Optional end date for filtering
+ * @param args.pageSize - Number of records per page (default: 50, max: 200)
+ * @param args.page - Page number (0-based)
+ * @returns Funnel data with pagination information
+ *
+ * @example
+ * ```typescript
+ * const funnel = await getSignatureCompletionFunnelPaginated({
+ *   orgId: "org_123",
+ *   pageSize: 100,
+ *   page: 0
+ * });
+ *
+ * console.log(`Conversion rate: ${funnel.conversionRates.overallConversion}%`);
+ * ```
+ */
 export const getSignatureCompletionFunnelPaginated = query({
   args: {
     orgId: v.string(),

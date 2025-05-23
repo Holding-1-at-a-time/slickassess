@@ -152,13 +152,61 @@ export interface PricingEstimate {
   confidence: number // 0-1, how confident we are in this estimate
 }
 
+/**
+ * Advanced pricing engine for automotive detailing services.
+ *
+ * This engine calculates dynamic pricing based on multiple factors including:
+ * - Vehicle characteristics (size, type, age)
+ * - Damage assessment (severity, type, count)
+ * - Service requirements (duration, urgency, additional services)
+ * - Market conditions (location, seasonality, competition)
+ *
+ * @example
+ * ```typescript
+ * const engine = new PricingEngine(tenantPricing);
+ * const estimate = engine.calculateEstimate(vehicle, damage, services);
+ * console.log(`Total price: $${estimate.total.toFixed(2)}`);
+ * ```
+ */
 export class PricingEngine {
   private tenantPricing: TenantPricing
 
+  /**
+   * Creates a new pricing engine instance.
+   *
+   * @param tenantPricing - The tenant-specific pricing configuration
+   */
   constructor(tenantPricing: TenantPricing) {
     this.tenantPricing = tenantPricing
   }
 
+  /**
+   * Calculates a comprehensive pricing estimate for a detailing service.
+   *
+   * The calculation process:
+   * 1. Starts with base price
+   * 2. Applies vehicle-specific multipliers (size, body type)
+   * 3. Applies condition multipliers (damage, cleanliness)
+   * 4. Applies service multipliers (duration, urgency, additional services)
+   * 5. Applies market multipliers (location, seasonal, competitor adjustment)
+   * 6. Adds profit margin
+   * 7. Ensures price stays within min/max bounds
+   * 8. Calculates taxes and breakdown
+   *
+   * @param vehicle - Vehicle information and characteristics
+   * @param damage - Damage assessment and interior condition
+   * @param services - Service options and requirements
+   * @returns Complete pricing estimate with breakdown and confidence score
+   *
+   * @example
+   * ```typescript
+   * const estimate = engine.calculateEstimate(
+   *   { make: 'Toyota', model: 'Camry', year: 2020, bodyType: 'sedan', size: 'midsize' },
+   *   { exteriorDamage: { severity: 'minor', types: ['scratch'], count: 2, requiresSpecialTreatment: false }, ... },
+   *   { duration: 'standard', includeInterior: true, includeExterior: true, urgency: 'standard', ... }
+   * );
+   * ```
+   */
   calculateEstimate(vehicle: VehicleInfo, damage: DamageAssessment, services: ServiceOptions): PricingEstimate {
     const basePrice = this.tenantPricing.basePricing.basePrice
 
@@ -224,6 +272,19 @@ export class PricingEngine {
     }
   }
 
+  /**
+   * Calculates damage-based pricing multiplier.
+   *
+   * Considers:
+   * - Base severity multiplier
+   * - Specific damage types (rust, deep scratches, paint damage)
+   * - Special treatment requirements
+   * - Damage count scaling
+   *
+   * @param exteriorDamage - Exterior damage assessment
+   * @returns Damage multiplier (capped at 3.0x)
+   * @private
+   */
   private calculateDamageMultiplier(exteriorDamage: DamageAssessment["exteriorDamage"]): number {
     let multiplier = DAMAGE_SEVERITY_MULTIPLIERS[exteriorDamage.severity]
 
@@ -240,6 +301,18 @@ export class PricingEngine {
     return Math.min(multiplier, 3.0) // Cap at 3x
   }
 
+  /**
+   * Calculates cleanliness-based pricing multiplier.
+   *
+   * Considers:
+   * - Base cleanliness level
+   * - Interior material type (leather, fabric, vinyl)
+   * - Specific issues (stains, odors, pet hair)
+   *
+   * @param interiorCondition - Interior condition assessment
+   * @returns Cleanliness multiplier (capped at 2.5x)
+   * @private
+   */
   private calculateCleanlinessMultiplier(interiorCondition: DamageAssessment["interiorCondition"]): number {
     let multiplier = CLEANLINESS_MULTIPLIERS[interiorCondition.cleanliness]
 
@@ -254,6 +327,19 @@ export class PricingEngine {
     return Math.min(multiplier, 2.5) // Cap at 2.5x
   }
 
+  /**
+   * Calculates service-based pricing multiplier.
+   *
+   * Considers:
+   * - Base service inclusions (interior, exterior, engine, wheels)
+   * - Additional services (wax, ceramic coating, paint correction)
+   * - Service complexity and time requirements
+   *
+   * @param services - Service options
+   * @param interiorCondition - Interior condition for context
+   * @returns Services multiplier
+   * @private
+   */
   private calculateServicesMultiplier(
     services: ServiceOptions,
     interiorCondition: DamageAssessment["interiorCondition"],
@@ -290,6 +376,13 @@ export class PricingEngine {
     return multiplier
   }
 
+  /**
+   * Calculates urgency-based pricing multiplier.
+   *
+   * @param urgency - Service urgency level
+   * @returns Urgency multiplier (1.0 for standard, 1.3 for rush, 1.6 for emergency)
+   * @private
+   */
   private calculateUrgencyMultiplier(urgency: ServiceOptions["urgency"]): number {
     switch (urgency) {
       case "rush":
@@ -301,6 +394,21 @@ export class PricingEngine {
     }
   }
 
+  /**
+   * Estimates service duration based on vehicle and service requirements.
+   *
+   * Considers:
+   * - Base duration by service type
+   * - Vehicle size adjustments
+   * - Damage and cleanliness impact
+   * - Service level multipliers
+   *
+   * @param vehicle - Vehicle information
+   * @param damage - Damage assessment
+   * @param services - Service options
+   * @returns Estimated duration in hours (rounded to 1 decimal place)
+   * @private
+   */
   private calculateEstimatedDuration(vehicle: VehicleInfo, damage: DamageAssessment, services: ServiceOptions): number {
     // Base duration by service type
     let baseDuration = 2 // hours
@@ -323,6 +431,14 @@ export class PricingEngine {
     return Math.round(baseDuration * 10) / 10 // Round to 1 decimal
   }
 
+  /**
+   * Calculates cost breakdown into labor, materials, overhead, and profit.
+   *
+   * @param subtotal - Total service cost before taxes
+   * @param duration - Estimated service duration in hours
+   * @returns Cost breakdown by category
+   * @private
+   */
   private calculateBreakdown(subtotal: number, duration: number): PricingEstimate["breakdown"] {
     const hourlyRate = this.tenantPricing.basePricing.pricePerHour
     const labor = duration * hourlyRate
@@ -338,6 +454,20 @@ export class PricingEngine {
     }
   }
 
+  /**
+   * Calculates confidence score for the pricing estimate.
+   *
+   * Confidence decreases based on:
+   * - Vehicle age (older vehicles are less predictable)
+   * - Damage severity (severe damage has more variables)
+   * - Interior cleanliness (very dirty interiors are unpredictable)
+   *
+   * @param vehicle - Vehicle information
+   * @param damage - Damage assessment
+   * @param services - Service options
+   * @returns Confidence score between 0.5 and 1.0
+   * @private
+   */
   private calculateConfidence(vehicle: VehicleInfo, damage: DamageAssessment, services: ServiceOptions): number {
     let confidence = 1.0
 
@@ -358,7 +488,26 @@ export class PricingEngine {
   }
 }
 
-// Utility function to analyze AI results and create damage assessment
+/**
+ * Creates a damage assessment from AI analysis results.
+ *
+ * This utility function processes raw AI analysis data and converts it into
+ * a structured damage assessment that can be used by the pricing engine.
+ *
+ * @param exteriorAnalysis - AI analysis of exterior condition
+ * @param interiorAnalysis - AI analysis of interior condition
+ * @param vehicleInfo - Vehicle information for context
+ * @returns Structured damage assessment
+ *
+ * @example
+ * ```typescript
+ * const assessment = createDamageAssessmentFromAI(
+ *   { damages: [{ severity: 'moderate', type: 'scratch' }] },
+ *   { overallCleanliness: 'Clean', issues: [] },
+ *   vehicleInfo
+ * );
+ * ```
+ */
 export function createDamageAssessmentFromAI(
   exteriorAnalysis: any,
   interiorAnalysis: any,
