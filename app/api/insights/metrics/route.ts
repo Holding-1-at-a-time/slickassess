@@ -21,21 +21,31 @@ export async function GET() {
 
     let appointmentsPerDay
     let revenuePerMonth
+    let topClients
+    let servicePopularity
 
     if (useRealBigQuery) {
       // Use real BigQuery queries
       appointmentsPerDay = await queryAppointmentsPerDay(orgId)
       revenuePerMonth = await queryRevenuePerMonth(orgId)
+
+      // Get additional metrics from Convex
+      topClients = await convexClient.query(api.analytics.getTopClientsByRevenue, { orgId, limit: 5 })
+      servicePopularity = await convexClient.query(api.analytics.getServicePopularity, { orgId })
     } else {
       // Use Convex as a fallback
       appointmentsPerDay = await convexClient.query(api.analytics.getAppointmentsPerDay, { orgId })
       revenuePerMonth = await convexClient.query(api.analytics.getRevenuePerMonth, { orgId })
+      topClients = await convexClient.query(api.analytics.getTopClientsByRevenue, { orgId, limit: 5 })
+      servicePopularity = await convexClient.query(api.analytics.getServicePopularity, { orgId })
     }
 
     // Return the metrics
     return NextResponse.json({
       appointmentsPerDay,
       revenuePerMonth,
+      topClients,
+      servicePopularity,
     })
   } catch (error) {
     console.error("Error fetching metrics:", error)

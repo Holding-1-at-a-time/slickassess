@@ -1,4 +1,4 @@
-````markdown
+\`\`\``markdown
 # SlickAssess
 
 SlickAssess is a multi‐tenant SaaS platform built for professional auto detailers. It streamlines vehicle assessments, appointment scheduling, and customer engagement through AI‐powered tools and modern integrations. SlickAssess leverages:
@@ -60,7 +60,7 @@ SlickAssess brings together a set of modern web technologies to solve real‐wor
 
 Below is the complete Entity Relationship Diagram (ERD) for SlickAssess’s core data model. It represents tables (Convex collections) and their relationships.
 
-```mermaid
+\`\`\`mermaid
 erDiagram
     %% Entity boxes
     TenantAppointment {
@@ -398,7 +398,7 @@ erDiagram
     KnowledgeBaseArticle ||--o{ TenantAppointment : "referenced in"
     LeadAssessment ||--o{ Client : "may convert to"
     FeatureFlag ||--o{ TenantAppointment : "may enable"
-````
+\`\`\``
 
 ---
 
@@ -406,7 +406,7 @@ erDiagram
 
 The diagram below illustrates SlickAssess’s core system architecture, including frontend, backend, AI, and integration components.
 
-```mermaid
+\`\`\`mermaid
 flowchart LR
     subgraph Client Browser
         A1[Next.js App (SSR/CSR)]
@@ -466,7 +466,7 @@ flowchart LR
     C1 --> F1
     B1 --> G1
     A1 --> G2
-```
+\`\`\`
 
 ---
 
@@ -476,7 +476,7 @@ flowchart LR
 
 This sequence diagram shows how a client’s assessment flows from image upload through AI analysis, assessment completion, and result delivery.
 
-```mermaid
+\`\`\`mermaid
 sequenceDiagram
     participant Client
     participant Frontend
@@ -510,7 +510,7 @@ sequenceDiagram
     AI-->>ConvexBackend: Summary text
     ConvexBackend->>ConvexBackend: Update Assessment (status=completed, aiSummary)
     ConvexBackend->>EmailService: Send “Assessment Ready” email to client
-```
+\`\`\`
 
 ---
 
@@ -518,7 +518,7 @@ sequenceDiagram
 
 This flow depicts how SlickAssess synchronizes data with the Slick Solutions platform and billing systems (SlickPay).
 
-```mermaid
+\`\`\`mermaid
 sequenceDiagram
     participant SlickSolutions
     participant SlickAssessBackend
@@ -547,7 +547,7 @@ sequenceDiagram
     SlickAssessBackend->>Stripe: Create subscription / invoice
     Stripe-->>SlickAssessBackend: Webhook “invoice.paid” / “invoice.failed”
     SlickAssessBackend->>ConvexBackend: Mutation billingCustomers:update
-```
+\`\`\`
 
 ---
 
@@ -719,7 +719,7 @@ Below is a high‐level outline of all major React components and sub-components
 
 A clear folder organization keeps the codebase maintainable. Below is the recommended `src/` layout:
 
-```
+\`\`\`
 src/
 ├── app/
 │   ├── layout.tsx
@@ -937,7 +937,7 @@ src/
 └── styles/
     ├── tailwind.css
     └── globals.css
-```
+\`\`\`
 
 ---
 
@@ -959,40 +959,40 @@ src/
 
 1. **Clone & Initialize**
 
-   ```bash
+   \`\`\`bash
    git clone https://github.com/your-username/slickassess.git
    cd slickassess
-   ```
+   \`\`\`
 
 2. **Install Dependencies**
 
-   ```bash
+   \`\`\`bash
    npm install
    # or
    yarn install
-   ```
+   \`\`\`
 
 3. **Initialize Convex**
    If you haven’t already created a Convex project, do so in a separate folder:
 
-   ```bash
+   \`\`\`bash
    mkdir slickassess-convex
    cd slickassess-convex
    npx convex init
    # Copy the resulting `convex/` folder into `src/convex/` of your Next.js repo
-   ```
+   \`\`\`
 
    Then deploy your schema to Convex:
 
-   ```bash
+   \`\`\`bash
    cd slickassess
    npx convex deploy
-   ```
+   \`\`\`
 
 4. **Tailwind CSS Setup**
    Tailwind was initialized with `npx tailwindcss init -p`. Ensure your `tailwind.config.js` has:
 
-   ```js
+   \`\`\`js
    module.exports = {
      darkMode: "class",
      content: [
@@ -1009,26 +1009,26 @@ src/
      },
      plugins: []
    };
-   ```
+   \`\`\`
 
    In `styles/globals.css`, include:
 
-   ```css
+   \`\`\`css
    @tailwind base;
    @tailwind components;
    @tailwind utilities;
-   ```
+   \`\`\`
 
 5. **Clerk Configuration**
    Install Clerk SDK:
 
-   ```bash
+   \`\`\`bash
    npm install @clerk/nextjs
-   ```
+   \`\`\`
 
    In `app/layout.tsx`, wrap with `<ClerkProvider>`:
 
-   ```tsx
+   \`\`\`tsx
    // app/layout.tsx
    "use client";
 
@@ -1047,12 +1047,12 @@ src/
        </html>
      );
    }
-   ```
+   \`\`\`
 
 6. **Environment Variables**
    Create a `.env.local` file in the project root with:
 
-   ```
+   \`\`\`
    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your-clerk-publishable-key
    CLERK_API_KEY=your-clerk-secret-key
    NEXT_PUBLIC_CONVEX_URL=your-convex-url
@@ -1061,19 +1061,19 @@ src/
    STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
    GOOGLE_CLIENT_ID=your-google-client-id
    GOOGLE_CLIENT_SECRET=your-google-client-secret
-   ```
+   \`\`\`
 
    Adjust as needed for your local and production environments.
 
 7. **Run in Development Mode**
    Start Convex locally and the Next.js dev server concurrently:
 
-   ```bash
+   \`\`\`bash
    # In one terminal:
    npx convex dev
    # In another terminal:
    npm run dev
-   ```
+   \`\`\`
 
    The Next.js app will be available at [http://localhost:3000](http://localhost:3000), and Convex functions at [http://localhost:3333](http://localhost:3333) by default.
 
@@ -1083,7 +1083,7 @@ src/
 
 Add these scripts to your `package.json` under `"scripts"`:
 
-```json
+\`\`\`json
 {
   "scripts": {
     "dev": "next dev",
@@ -1097,7 +1097,7 @@ Add these scripts to your `package.json` under `"scripts"`:
     "e2e": "playwright test"
   }
 }
-```
+\`\`\`
 
 * `npm run dev`: Starts Next.js development server at port 3000.
 * `npm run convex:dev`: Starts Convex local development server.
@@ -1117,7 +1117,7 @@ Below are all relevant diagrams (as Mermaid code blocks). Render them in any Mar
 
 ### Entity Relationship Diagram (ERD)
 
-```mermaid
+\`\`\`mermaid
 erDiagram
     %% Entity boxes
     TenantAppointment {
@@ -1455,13 +1455,13 @@ erDiagram
     KnowledgeBaseArticle ||--o{ TenantAppointment : "referenced in"
     LeadAssessment ||--o{ Client : "may convert to"
     FeatureFlag ||--o{ TenantAppointment : "may enable"
-```
+\`\`\`
 
 ---
 
 ## System Architecture Diagram
 
-```mermaid
+\`\`\`mermaid
 flowchart LR
     subgraph Client Browser
         A1[Next.js App (SSR/CSR)]
@@ -1521,13 +1521,13 @@ flowchart LR
     C1 --> F1
     B1 --> G1
     A1 --> G2
-```
+\`\`\`
 
 ---
 
 ## Vehicle Assessment Data Flow
 
-```mermaid
+\`\`\`mermaid
 sequenceDiagram
     participant Client
     participant Frontend
@@ -1561,13 +1561,13 @@ sequenceDiagram
     AI-->>ConvexBackend: Summary text
     ConvexBackend->>ConvexBackend: Update Assessment (status=completed, aiSummary)
     ConvexBackend->>EmailService: Send “Assessment Ready” email to client
-```
+\`\`\`
 
 ---
 
 ## Data Synchronization Flow
 
-```mermaid
+\`\`\`mermaid
 sequenceDiagram
     participant SlickSolutions
     participant SlickAssessBackend
@@ -1596,7 +1596,7 @@ sequenceDiagram
     SlickAssessBackend->>Stripe: Create subscription / invoice
     Stripe-->>SlickAssessBackend: Webhook “invoice.paid” / “invoice.failed”
     SlickAssessBackend->>ConvexBackend: Mutation billingCustomers:update
-```
+\`\`\`
 
 ---
 

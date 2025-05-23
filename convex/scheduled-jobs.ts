@@ -1,20 +1,22 @@
 /**
-    * @description      : 
-    * @author           : rrome
-    * @group            : 
-    * @created          : 22/05/2025 - 07:53:44
-    * 
-    * MODIFICATION LOG
-    * - Version         : 1.0.0
-    * - Date            : 22/05/2025
-    * - Author          : rrome
-    * - Modification    : 
-**/
+ * @description      :
+ * @author           : rrome
+ * @group            :
+ * @created          : 22/05/2025 - 07:53:44
+ *
+ * MODIFICATION LOG
+ * - Version         : 1.0.0
+ * - Date            : 22/05/2025
+ * - Author          : rrome
+ * - Modification    :
+ **/
 "use node"
 
 import { internalAction } from "./_generated/server"
+import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import { prepareTrainingData, createFineTuningJob, deployFineTunedModel } from "../lib/ai/training-pipeline"
+import { logEvent } from "../lib/analytics/bigquery"
 
 /**
  * Scheduled job to train the AI model with new feedback
@@ -95,5 +97,93 @@ export const trainAIModel = internalAction({
         error: error.message || "Unknown error",
       }
     }
+  },
+})
+
+// Log an event to BigQuery
+export const logEventToBigQuery = internalAction({
+  args: {
+    orgId: v.string(),
+    eventType: v.string(),
+    eventData: v.object({}),
+    userId: v.optional(v.string()),
+    timestamp: v.number(),
+    eventId: v.id("analyticsEvents"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Determine the appropriate BigQuery table based on event type
+      let table = "generic_events"
+      if (args.eventType.includes("appointment")) {
+        table = "appointment_events"
+      } else if (args.eventType.includes("invoice") || args.eventType.includes("payment")) {
+        table = "invoice_events"
+      } else if (args.eventType.includes("assessment")) {
+        table = "assessment_events"
+      } else if (args.eventType.includes("client")) {
+        table = "client_events"
+      } else if (args.eventType.includes("vehicle")) {
+        table = "vehicle_events"
+      }
+
+      // Format the event for BigQuery
+      const event = {
+        eventId: args.eventId,
+        orgId: args.orgId,
+        eventType: args.eventType,
+        ...args.eventData,
+        userId: args.userId,
+        timestamp: new Date(args.timestamp).toISOString(),
+      }
+
+      // Log to BigQuery
+      const success = await logEvent("slickassess_dataset", table, event)
+
+      // Update the event status in Convex
+      if (success) {
+        await ctx.runMutation(internal.analytics.markEventLogged, {
+          eventId: args.eventId,
+        })
+      } else {
+        await ctx.runMutation(internal.analytics.markEventFailed, {
+          eventId: args.eventId,
+        })
+      }
+
+      return success
+    } catch (error) {
+      console.error("Error logging event to BigQuery:", error)
+
+      // Mark the event as failed in Convex
+      await ctx.runMutation(internal.analytics.markEventFailed, {
+        eventId: args.eventId,
+      })
+
+      return false
+    }
+  },
+})
+
+import { internalMutation } from "./_generated/server"
+
+// Add more internal mutations to analytics.ts
+export const markEventLogged = internalMutation({
+  args: { eventId: v.id("analyticsEvents") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.eventId, {
+      bigQueryLogged: true,
+      bigQueryLoggedAt: Date.now(),
+    })
+  },
+})
+
+export const markEventFailed = internalMutation({
+  args: { eventId: v.id("analyticsEvents") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.eventId, {
+      bigQueryLogged: false,
+      bigQueryError: true,
+      bigQueryErrorAt: Date.now(),
+    })
   },
 })

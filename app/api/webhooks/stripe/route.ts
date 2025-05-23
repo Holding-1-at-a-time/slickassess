@@ -2,23 +2,17 @@ import { NextResponse } from "next/server"
 import Stripe from "stripe"
 import { ConvexHttpClient } from "convex/http"
 import { api } from "@/convex/_generated/api"
+import { requireEnv } from "@/utils/env"
 
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+const stripe = new Stripe(requireEnv("STRIPE_SECRET_KEY"), {
   apiVersion: "2023-10-16",
 })
 
 // Initialize Convex client
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || ""
-const convexAdminKey = process.env.CONVEX_ADMIN_KEY || ""
+const convexUrl = requireEnv("NEXT_PUBLIC_CONVEX_URL")
+const convexAdminKey = requireEnv("CONVEX_ADMIN_KEY")
 const convexClient = new ConvexHttpClient(convexUrl, convexAdminKey)
-
-// Disable body parsing, we need the raw body for Stripe signature verification
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-}
 
 export async function POST(req: Request) {
   try {
@@ -34,7 +28,7 @@ export async function POST(req: Request) {
     // Verify the webhook signature
     let event: Stripe.Event
     try {
-      event = stripe.webhooks.constructEvent(rawBody, signature, process.env.STRIPE_WEBHOOK_SECRET || "")
+      event = stripe.webhooks.constructEvent(rawBody, signature, requireEnv("STRIPE_WEBHOOK_SECRET"))
     } catch (err) {
       console.error("Webhook signature verification failed:", err)
       return new NextResponse("Invalid signature", { status: 400 })
@@ -73,9 +67,12 @@ export async function POST(req: Request) {
         const customerId = invoice.customer as string
 
         // Find the organization by customer ID
-        // In a real implementation, you'd query your database
-        // For now, we'll use the customer metadata
         const customer = await stripe.customers.retrieve(customerId)
+        if (customer.deleted) {
+          console.error("Customer was deleted:", customerId)
+          return new NextResponse("Customer deleted", { status: 400 })
+        }
+
         const orgId = customer.metadata.orgId
 
         if (!orgId) {
@@ -101,6 +98,11 @@ export async function POST(req: Request) {
 
         // Find the organization by customer ID
         const customer = await stripe.customers.retrieve(customerId)
+        if (customer.deleted) {
+          console.error("Customer was deleted:", customerId)
+          return new NextResponse("Customer deleted", { status: 400 })
+        }
+
         const orgId = customer.metadata.orgId
 
         if (!orgId) {
@@ -116,6 +118,65 @@ export async function POST(req: Request) {
           status: subscription.status,
           currentPeriodStart: subscription.current_period_start * 1000,
           currentPeriodEnd: subscription.current_period_end * 1000,
+        })
+
+        break
+      }
+
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription
+        const customerId = subscription.customer as string
+
+        // Find the organization by customer ID
+        const customer = await stripe.customers.retrieve(customerId)
+        if (customer.deleted) {
+          console.error("Customer was deleted:", customerId)
+          return new NextResponse("Customer deleted", { status: 400 })
+        }
+
+        const orgId = customer.metadata.orgId
+
+        if (!orgId) {
+          console.error("Missing orgId in customer metadata:", customer)
+          return new NextResponse("Missing orgId", { status: 400 })
+        }
+
+        // Mark subscription as canceled in Convex
+        await convexClient.mutation(api.billing.saveSubscriptionId, {
+          orgId,
+          subscriptionId: subscription.id,
+          planId: subscription.items.data[0].price.id,
+          status: "canceled",
+          currentPeriodStart: subscription.current_period_start * 1000,
+          currentPeriodEnd: subscription.current_period_end * 1000,
+        })
+
+        break
+      }
+
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice
+        const customerId = invoice.customer as string
+
+        // Find the organization by customer ID
+        const customer = await stripe.customers.retrieve(customerId)
+        if (customer.deleted) {
+          console.error("Customer was deleted:", customerId)
+          return new NextResponse("Customer deleted", { status: 400 })
+        }
+
+        const orgId = customer.metadata.orgId
+
+        if (!orgId) {
+          console.error("Missing orgId in customer metadata:", customer)
+          return new NextResponse("Missing orgId", { status: 400 })
+        }
+
+        // Handle failed payment - could send notification, update status, etc.
+        await convexClient.mutation(api.billing.handleInvoicePaymentFailed, {
+          orgId,
+          invoiceId: invoice.id,
+          amount: invoice.amount_due,
         })
 
         break
