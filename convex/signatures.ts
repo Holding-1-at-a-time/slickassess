@@ -358,7 +358,16 @@ export const getSignatureAnalytics = query({
  * @returns Array of daily activity data
  * @private
  */
-function generateDailyActivity(signatures: any[], startDate: number, endDate: number) {
+interface SignatureRecord {
+  // Define the expected fields for a signature record.
+  // Example fields (replace/add as appropriate for your data model):
+  id: string;
+  sentAt: number;
+  completedAt?: number;
+  // Add other relevant fields here
+}
+
+function generateDailyActivity(signatures: SignatureRecord[], startDate: number, endDate: number) {
   const days = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000))
   const dailyData = []
 
