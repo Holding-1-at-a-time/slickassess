@@ -11,8 +11,13 @@ export async function POST(req: Request) {
     // Get auth token for Convex
     const authToken = await getToken({ template: "convex" })
 
+    // Validate NEXT_PUBLIC_CONVEX_URL before use
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
+    if (!convexUrl) {
+      throw new Error("Missing environment variable: NEXT_PUBLIC_CONVEX_URL")
+    }
     // Initialize calendar service
-    const calendarService = new GoogleCalendarService(process.env.NEXT_PUBLIC_CONVEX_URL!, authToken)
+    const calendarService = new GoogleCalendarService(convexUrl, authToken)
 
     // Parse request body for sync options
     const body = await req.json().catch(() => ({}))
