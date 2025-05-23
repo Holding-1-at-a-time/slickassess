@@ -26,9 +26,27 @@ export async function POST(req: Request) {
     } catch (err) {
       return new NextResponse("Invalid JSON in request body", { status: 400 })
     }
+    // Validate and parse startDate and endDate
+    let startDate: Date | undefined = undefined;
+    let endDate: Date | undefined = undefined;
+
+    if (body.startDate) {
+      const parsedStart = new Date(body.startDate);
+      if (!isNaN(parsedStart.getTime())) {
+        startDate = parsedStart;
+      }
+    }
+
+    if (body.endDate) {
+      const parsedEnd = new Date(body.endDate);
+      if (!isNaN(parsedEnd.getTime())) {
+        endDate = parsedEnd;
+      }
+    }
+
     const syncOptions = {
-      startDate: body.startDate ? new Date(body.startDate) : undefined,
-      endDate: body.endDate ? new Date(body.endDate) : undefined,
+      startDate,
+      endDate,
       maxResults: body.maxResults || 250,
     }
 
