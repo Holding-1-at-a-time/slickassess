@@ -10,9 +10,9 @@
     * - Author          : rrome
     * - Modification    : 
 **/
-
 import { v } from "convex/values"
 import { query } from "../_generated/server"
+
 
 /**
  * Rate limiting configuration
@@ -87,8 +87,8 @@ export async function checkRateLimit(
   // Get recent requests for this identifier and action
   const requests = await ctx.db
     .query("rateLimits")
-    .withIndex("by_identifier_action_timestamp", (q: any) =>
-      q.eq("identifier", identifier).eq("action", action).gt("timestamp", windowStart),
+    .withIndex("by_identifier_and_action", (q: any) =>
+      q.eq("identifier", identifier).eq("action", action).gt("windowStart", windowStart),
     )
     .collect()
 
@@ -109,7 +109,9 @@ export async function recordRequest(ctx: any, identifier: string, action: string
   const id = await ctx.db.insert("rateLimits", {
     identifier,
     action,
-    timestamp: now,
+    count: 1,
+    windowStart: now,
+    expiresAt: now + 24 * 60 * 60 * 1000, // 1 day expiry (adjust as needed)
   })
 
   // Clean up old records (optional, but helps keep the table size manageable)
@@ -117,7 +119,7 @@ export async function recordRequest(ctx: any, identifier: string, action: string
   const oneDayAgo = now - 24 * 60 * 60 * 1000
   const oldRecords = await ctx.db
     .query("rateLimits")
-    .withIndex("by_timestamp", (q: { lt: (arg0: string, arg1: number) => any }) => q.lt("timestamp", oneDayAgo))
+    .withIndex("by_expiresAt", (q: any) => q.lt("expiresAt", oneDayAgo))
     .take(100)
     .collect()
 

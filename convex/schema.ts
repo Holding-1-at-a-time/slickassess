@@ -550,5 +550,5 @@ export default defineSchema({
   })
     .index("by_identifier_and_action", ["identifier", "action"])
     .index("by_expiresAt", ["expiresAt"]) // For cleanup
-    .index("by_windowStart", ["windowStart"]); // For cleanup
+    .index("by_windowStart", ["windowStart"]),// For cleanup
 });
