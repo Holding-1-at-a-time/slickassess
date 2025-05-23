@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       {
         success: false,
         error: "Failed to sync calendar",
-        message: error instanceof Error ? error.message : "Unknown error",
+        message: "An unexpected error occurred. Please try again later.",
       },
       { status: 500 },
     )
