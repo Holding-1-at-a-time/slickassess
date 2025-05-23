@@ -20,7 +20,12 @@ export async function POST(req: Request) {
     const calendarService = new GoogleCalendarService(convexUrl, authToken)
 
     // Parse request body for sync options
-    const body = await req.json().catch(() => ({}))
+    let body
+    try {
+      body = await req.json()
+    } catch (err) {
+      return new NextResponse("Invalid JSON in request body", { status: 400 })
+    }
     const syncOptions = {
       startDate: body.startDate ? new Date(body.startDate) : undefined,
       endDate: body.endDate ? new Date(body.endDate) : undefined,
