@@ -52,45 +52,86 @@ export function generateAIAssessmentSummary(
   vehicleData: VehicleData,
   pricingData: PricingData,
 ): AIAssessmentData {
-  // Process exterior damage
-  const exteriorDamages = (aiResults.exterior?.damages || []).map((damage, index) => {
-    const severityMultiplier =
-      DAMAGE_SEVERITY_MULTIPLIERS[damage.severity as keyof typeof DAMAGE_SEVERITY_MULTIPLIERS] || 1
-    const baseImpact = pricingData.basePrice * 0.1 // 10% base impact per damage
-    const priceImpact = baseImpact * (severityMultiplier - 1)
+  // Validate required inputs
+  if (!aiResults) {
+    throw new Error("AI analysis results are required")
+  }
 
-    return {
-      id: `damage_${index}`,
-      type: damage.type,
-      severity: damage.severity as "minor" | "moderate" | "severe",
-      location: damage.location,
-      size: damage.size || "Unknown",
-      repairComplexity: damage.repairComplexity || "Standard",
-      confidence: 0.85 + Math.random() * 0.1, // Simulated confidence
-      priceImpact: Math.max(priceImpact, 0),
-      description: generateDamageDescription(damage),
-      boundingBox: damage.boundingBox,
-    }
-  })
+  if (!vehicleData || !vehicleData.make || !vehicleData.model || !vehicleData.year) {
+    throw new Error("Complete vehicle data is required (make, model, year)")
+  }
 
-  // Process interior issues
-  const interiorIssues = (aiResults.interior?.issues || []).map((issue, index) => {
-    const severityMultiplier =
-      DAMAGE_SEVERITY_MULTIPLIERS[issue.severity as keyof typeof DAMAGE_SEVERITY_MULTIPLIERS] || 1
-    const baseImpact = pricingData.basePrice * 0.08 // 8% base impact per interior issue
-    const priceImpact = baseImpact * (severityMultiplier - 1)
+  if (!pricingData || typeof pricingData.basePrice !== "number") {
+    throw new Error("Valid pricing data with basePrice is required")
+  }
 
-    return {
-      id: `interior_${index}`,
-      type: issue.type,
-      severity: issue.severity as "minor" | "moderate" | "severe",
-      location: issue.location,
-      recommendation: issue.recommendation,
-      confidence: 0.8 + Math.random() * 0.15,
-      priceImpact: Math.max(priceImpact, 0),
-      description: generateInteriorDescription(issue),
-    }
-  })
+  // Process exterior damage with proper error handling
+  const exteriorDamages = (aiResults.exterior?.damages || [])
+    .map((damage, index) => {
+      // Validate required damage properties
+      if (!damage.type || !damage.location) {
+        console.warn(`Skipping damage at index ${index} due to missing required properties`)
+        return null
+      }
+
+      // Ensure severity is one of the expected values
+      const validSeverities = ["minor", "moderate", "severe"]
+      const severity =
+        damage.severity && validSeverities.includes(damage.severity.toLowerCase())
+          ? damage.severity.toLowerCase()
+          : "minor"
+
+      const severityMultiplier = DAMAGE_SEVERITY_MULTIPLIERS[severity as keyof typeof DAMAGE_SEVERITY_MULTIPLIERS] || 1
+      const baseImpact = pricingData.basePrice * 0.1 // 10% base impact per damage
+      const priceImpact = baseImpact * (severityMultiplier - 1)
+
+      return {
+        id: `damage_${index}`,
+        type: damage.type,
+        severity: severity as "minor" | "moderate" | "severe",
+        location: damage.location,
+        size: damage.size || "Unknown",
+        repairComplexity: damage.repairComplexity || "Standard",
+        confidence: 0.85 + Math.random() * 0.1, // Simulated confidence
+        priceImpact: Math.max(priceImpact, 0),
+        description: generateDamageDescription(damage),
+        boundingBox: damage.boundingBox,
+      }
+    })
+    .filter(Boolean) as any[] // Filter out null values from invalid damages
+
+  // Process interior issues with proper error handling
+  const interiorIssues = (aiResults.interior?.issues || [])
+    .map((issue, index) => {
+      // Validate required issue properties
+      if (!issue.type || !issue.location) {
+        console.warn(`Skipping interior issue at index ${index} due to missing required properties`)
+        return null
+      }
+
+      // Ensure severity is one of the expected values
+      const validSeverities = ["minor", "moderate", "severe"]
+      const severity =
+        issue.severity && validSeverities.includes(issue.severity.toLowerCase())
+          ? issue.severity.toLowerCase()
+          : "minor"
+
+      const severityMultiplier = DAMAGE_SEVERITY_MULTIPLIERS[severity as keyof typeof DAMAGE_SEVERITY_MULTIPLIERS] || 1
+      const baseImpact = pricingData.basePrice * 0.08 // 8% base impact per interior issue
+      const priceImpact = baseImpact * (severityMultiplier - 1)
+
+      return {
+        id: `interior_${index}`,
+        type: issue.type,
+        severity: severity as "minor" | "moderate" | "severe",
+        location: issue.location,
+        recommendation: issue.recommendation || "Standard cleaning recommended",
+        confidence: 0.8 + Math.random() * 0.15,
+        priceImpact: Math.max(priceImpact, 0),
+        description: generateInteriorDescription(issue),
+      }
+    })
+    .filter(Boolean) as any[] // Filter out null values from invalid issues
 
   // Calculate severity distribution
   const severityDistribution = {

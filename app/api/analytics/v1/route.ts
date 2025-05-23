@@ -10,10 +10,21 @@ import {
 import { ConvexHttpClient } from "convex/http"
 import { api } from "@/convex/_generated/api"
 
-// Initialize Convex client
+// Initialize Convex client securely
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || ""
-const convexAdminKey = process.env.CONVEX_ADMIN_KEY || ""
-const convexClient = new ConvexHttpClient(convexUrl, convexAdminKey)
+const convexClient = new ConvexHttpClient(convexUrl)
+
+// For admin operations, use a function that requires authentication
+async function performAdminOperation(operation: string, params: any) {
+  // This ensures admin operations are only performed by authenticated users with proper permissions
+  const { userId, orgId, orgRole } = auth()
+  if (!userId || !orgId || (orgRole !== "admin" && orgRole !== "org:admin")) {
+    throw new Error("Unauthorized admin operation")
+  }
+
+  // Now perform the operation through Convex with proper authentication
+  return await convexClient.query(operation, params)
+}
 
 // Rate limiting helper
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
@@ -48,60 +59,139 @@ export async function GET(request: Request) {
       return new NextResponse("Rate limit exceeded", { status: 429 })
     }
 
-    // Parse query parameters
+    // Parse and validate query parameters
     const url = new URL(request.url)
-    const endpoint = url.searchParams.get("endpoint")
-    const format = url.searchParams.get("format") || "json"
 
-    if (!endpoint) {
-      return NextResponse.json({
-        error: "Missing endpoint parameter",
-        availableEndpoints: [
-          "overview",
-          "revenue",
-          "appointments",
-          "customers",
-          "segments",
-          "predictions",
-          "real-time",
-          "performance",
-        ],
-      })
+    // Validate endpoint parameter
+    const validEndpoints = [
+      "overview",
+      "revenue",
+      "appointments",
+      "customers",
+      "segments",
+      "predictions",
+      "real-time",
+      "performance",
+    ]
+    const endpoint = url.searchParams.get("endpoint")
+    if (!endpoint || !validEndpoints.includes(endpoint)) {
+      return NextResponse.json(
+        {
+          error: "Invalid or missing endpoint parameter",
+          availableEndpoints: validEndpoints,
+        },
+        { status: 400 },
+      )
+    }
+
+    // Validate format parameter
+    const validFormats = ["json", "csv"]
+    const format = url.searchParams.get("format") || "json"
+    if (!validFormats.includes(format)) {
+      return NextResponse.json(
+        {
+          error: "Invalid format parameter",
+          availableFormats: validFormats,
+        },
+        { status: 400 },
+      )
+    }
+
+    // Validate date parameters if present
+    const startDateParam = url.searchParams.get("startDate")
+    const endDateParam = url.searchParams.get("endDate")
+
+    let startDate: number | undefined
+    let endDate: number | undefined
+
+    if (startDateParam) {
+      const parsedStartDate = Date.parse(startDateParam)
+      if (isNaN(parsedStartDate)) {
+        return NextResponse.json(
+          {
+            error: "Invalid startDate format. Use ISO format (YYYY-MM-DD)",
+          },
+          { status: 400 },
+        )
+      }
+      startDate = parsedStartDate
+    }
+
+    if (endDateParam) {
+      const parsedEndDate = Date.parse(endDateParam)
+      if (isNaN(parsedEndDate)) {
+        return NextResponse.json(
+          {
+            error: "Invalid endDate format. Use ISO format (YYYY-MM-DD)",
+          },
+          { status: 400 },
+        )
+      }
+      endDate = parsedEndDate
+    }
+
+    // Validate days parameter if present
+    const daysParam = url.searchParams.get("days")
+    let days: number | undefined
+
+    if (daysParam) {
+      days = Number.parseInt(daysParam, 10)
+      if (isNaN(days) || days <= 0 || days > 365) {
+        return NextResponse.json(
+          {
+            error: "Invalid days parameter. Must be a positive number between 1 and 365",
+          },
+          { status: 400 },
+        )
+      }
+    }
+
+    // Create a sanitized params object for the analytics functions
+    const sanitizedParams = new URLSearchParams()
+    if (days) sanitizedParams.set("days", days.toString())
+    if (startDate) sanitizedParams.set("startDate", startDate.toString())
+    if (endDate) sanitizedParams.set("endDate", endDate.toString())
+
+    // Copy other validated parameters
+    const validParamNames = ["period", "segment", "type", "clientId", "forecastDays", "forecastMonths"]
+    for (const param of validParamNames) {
+      const value = url.searchParams.get(param)
+      if (value) sanitizedParams.set(param, value)
     }
 
     let data: any = {}
 
     switch (endpoint) {
       case "overview":
-        data = await getOverviewAnalytics(orgId, url.searchParams)
+        data = await getOverviewAnalytics(orgId, sanitizedParams)
         break
 
       case "revenue":
-        data = await getRevenueAnalytics(orgId, url.searchParams)
+        data = await getRevenueAnalytics(orgId, sanitizedParams)
         break
 
       case "appointments":
-        data = await getAppointmentAnalytics(orgId, url.searchParams)
+        data = await getAppointmentAnalytics(orgId, sanitizedParams)
         break
 
       case "customers":
-        data = await getCustomerAnalytics(orgId, url.searchParams)
+        data = await getCustomerAnalytics(orgId, sanitizedParams)
         break
 
       case "segments":
-        data = await getSegmentAnalytics(orgId, url.searchParams)
+        data = await getSegmentAnalytics(orgId, sanitizedParams)
         break
 
       case "predictions":
-        data = await getPredictiveAnalytics(orgId, url.searchParams)
+        data = await getPredictiveAnalytics(orgId, sanitizedParams)
         break
 
       case "real-time":
-        data = await getRealTimeAnalytics(orgId, url.searchParams)
+        data = await getRealTimeAnalytics(orgId, sanitizedParams)
         break
 
       case "performance":
-        data = await getPerformanceAnalytics(orgId, url.searchParams)
+        data = await getPerformanceAnalytics(orgId, sanitizedParams)
         break
 
       default:
