@@ -94,8 +94,8 @@ export class GoogleCalendarService {
 
       // Check if tokens need refresh
       if (this.isTokenExpired(integration.tokenExpiry)) {
-        const refreshedIntegration = await this.refreshTokens(integration)
-        return refreshedIntegration
+        return await this.refreshTokens(integration);
+
       }
 
       return integration
