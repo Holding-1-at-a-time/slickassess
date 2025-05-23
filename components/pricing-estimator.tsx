@@ -15,6 +15,8 @@ import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { Calculator, Car, Clock, DollarSign, AlertTriangle, TrendingUp, Info } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import { AIAssessmentSummary } from "@/components/ai-assessment-summary"
+import { generateAIAssessmentSummary } from "@/lib/pricing/assessment-generator"
 
 interface PricingEstimatorProps {
   vehicleId: Id<"vehicles">
@@ -26,6 +28,7 @@ export function PricingEstimator({ vehicleId, assessmentId, onEstimateGenerated 
   const [activeTab, setActiveTab] = useState("configure")
   const [isCalculating, setIsCalculating] = useState(false)
   const [currentEstimate, setCurrentEstimate] = useState<any>(null)
+  const [assessmentSummary, setAssessmentSummary] = useState<any>(null)
 
   // Service configuration state
   const [serviceConfig, setServiceConfig] = useState({
@@ -84,6 +87,50 @@ export function PricingEstimator({ vehicleId, assessmentId, onEstimateGenerated 
       })
 
       setCurrentEstimate(result.estimate)
+
+      // Generate AI assessment summary
+      if (vehicle) {
+        const aiResults = {
+          exterior: {
+            overallCondition:
+              result.estimate.adjustments.damage > 1.3
+                ? "poor"
+                : result.estimate.adjustments.damage > 1.1
+                  ? "fair"
+                  : "good",
+            damages: [], // This would come from actual AI analysis
+            summary: "AI analysis completed",
+          },
+          interior: {
+            overallCleanliness:
+              result.estimate.adjustments.cleanliness > 1.3
+                ? "dirty"
+                : result.estimate.adjustments.cleanliness > 1.1
+                  ? "average"
+                  : "clean",
+            issues: [], // This would come from actual AI analysis
+            summary: "Interior analysis completed",
+          },
+        }
+
+        const summary = generateAIAssessmentSummary(
+          aiResults,
+          {
+            make: vehicle.make,
+            model: vehicle.model,
+            year: vehicle.year,
+            bodyType: vehicle.bodyType || "sedan",
+            size: vehicle.size || "midsize",
+          },
+          {
+            basePrice: result.estimate.basePrice,
+            estimate: result.estimate,
+          },
+        )
+
+        setAssessmentSummary(summary)
+      }
+
       setActiveTab("estimate")
 
       toast({
@@ -385,8 +432,148 @@ export function PricingEstimator({ vehicleId, assessmentId, onEstimateGenerated 
           </TabsContent>
 
           <TabsContent value="estimate" className="space-y-6 mt-6">
-            {currentEstimate ? (
+            {currentEstimate && assessmentSummary ? (
               <div className="space-y-6">
+                {/* AI Assessment Summary */}
+                <AIAssessmentSummary
+                  assessmentData={assessmentSummary}
+                  onItemClick={(item) => {
+                    console.log("Clicked item:", item)
+                    // Handle item click - could open detailed view
+                  }}
+                />
+
+                {/* Existing estimate content... */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl font-bold flex items-center gap-2">
+                      <DollarSign className="h-6 w-6" />
+                      {formatCurrency(currentEstimate.total)}
+                    </h3>
+                    <p className="text-muted-foreground">
+                      Estimated Duration: {currentEstimate.estimatedDuration} hours
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <Badge variant="outline" className={getConfidenceColor(currentEstimate.confidence)}>
+                      {getConfidenceLabel(currentEstimate.confidence)} ({Math.round(currentEstimate.confidence * 100)}%)
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Rest of existing estimate content... */}
+                {/* Price Breakdown */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Price Breakdown</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex justify-between">
+                      <span>Base Price</span>
+                      <span>{formatCurrency(currentEstimate.basePrice)}</span>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <h4 className="font-medium">Adjustments</h4>
+                      {Object.entries(currentEstimate.adjustments).map(([key, multiplier]) => {
+                        const percentage = (((multiplier as number) - 1) * 100).toFixed(1)
+                        const isIncrease = (multiplier as number) > 1
+                        return (
+                          <div key={key} className="flex justify-between text-sm">
+                            <span className="capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
+                            <span className={isIncrease ? "text-red-600" : "text-green-600"}>
+                              {isIncrease ? "+" : ""}
+                              {percentage}%
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex justify-between font-medium">
+                      <span>Subtotal</span>
+                      <span>{formatCurrency(currentEstimate.subtotal)}</span>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <span>Taxes (8.5%)</span>
+                      <span>{formatCurrency(currentEstimate.taxes)}</span>
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex justify-between text-lg font-bold">
+                      <span>Total</span>
+                      <span>{formatCurrency(currentEstimate.total)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Cost Breakdown */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Cost Analysis</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {Object.entries(currentEstimate.breakdown).map(([category, amount]) => {
+                        const percentage = (((amount as number) / currentEstimate.subtotal) * 100).toFixed(1)
+                        return (
+                          <div key={category} className="space-y-2">
+                            <div className="flex justify-between">
+                              <span className="capitalize">{category}</span>
+                              <span>
+                                {formatCurrency(amount as number)} ({percentage}%)
+                              </span>
+                            </div>
+                            <Progress value={Number.parseFloat(percentage)} className="h-2" />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Confidence Factors */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Info className="h-5 w-5" />
+                      Estimate Confidence Factors
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm">
+                      <p>
+                        <strong>Confidence Level:</strong> {getConfidenceLabel(currentEstimate.confidence)}
+                      </p>
+                      <p className="text-muted-foreground">
+                        This estimate is based on vehicle specifications, damage assessment, and service requirements.
+                        Actual pricing may vary based on specific conditions discovered during service.
+                      </p>
+                      {currentEstimate.confidence < 0.8 && (
+                        <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                          <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5" />
+                          <div className="text-yellow-800">
+                            <p className="font-medium">Lower Confidence Estimate</p>
+                            <p className="text-sm">
+                              Consider a detailed in-person assessment for more accurate pricing.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : currentEstimate ? (
+              // Fallback to existing estimate display if no assessment summary
+              <div className="space-y-6">
+                {/* Existing estimate content without AI summary */}
                 {/* Estimate Header */}
                 <div className="flex items-center justify-between">
                   <div>
