@@ -636,10 +636,37 @@ export default defineSchema({
     shareExpiresAt: v.optional(v.string()),
     viewCount: v.optional(v.number()),
     lastViewed: v.optional(v.string()),
+    signatureId: v.optional(v.id("digitalSignatures")),
   })
     .index("by_org", ["orgId"])
     .index("by_vehicle", ["vehicleId"])
     .index("by_assessment", ["assessmentId"])
     .index("by_customer", ["customerId"])
     .index("by_share_token", ["shareToken"]),
+
+  // Digital Signatures table
+  digitalSignatures: defineTable({
+    reportId: v.string(), // Assessment report ID
+    approvalData: v.any(), // Complete approval workflow data
+    customerInfo: v.object({
+      name: v.string(),
+      email: v.string(),
+      phone: v.string(),
+    }),
+    businessInfo: v.optional(
+      v.object({
+        name: v.string(),
+        address: v.string(),
+        phone: v.string(),
+        email: v.string(),
+      }),
+    ),
+    status: v.string(), // "approved", "rejected", "pending", "requires_changes"
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_reportId", ["reportId"])
+    .index("by_status", ["status"])
+    .index("by_createdAt", ["createdAt"]),
 })
